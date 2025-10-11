@@ -1,4 +1,4 @@
-## Dewey Audio Migrator
+## Dewey Audiobook Migrator
 
 Node-based containerized watcher that organizes incoming audiobook files into a canonical library structure using Claude AI for intelligent author/title normalization.
 
@@ -52,23 +52,6 @@ docker run -d --name dewey \
 
 ### Local Development
 
-#### Using Docker (Recommended)
-```bash
-# Build the image locally
-docker build -t dewey:local .
-
-# Run with your user permissions
-docker run --rm \
-  -e ANTHROPIC_API_KEY=sk-ant-xxxx \
-  -e PUID=$(id -u) -e PGID=$(id -g) \
-  -e FILE_MODE=664 -e DIR_MODE=775 \
-  -v $(pwd)/incoming:/data/incoming \
-  -v $(pwd)/library:/data/library \
-  -v $(pwd)/logs:/data/logs \
-  dewey:local
-```
-
-#### Using Node.js Directly
 ```bash
 # Install dependencies
 yarn install
