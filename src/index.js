@@ -32,6 +32,7 @@ const log = pino({
 });
 
 const SOURCE_DIR = process.env.SOURCE_DIR || './data/incoming';
+const TARGET_DIR = process.env.TARGET_DIR || './data/library';
 const DIRECTORY_STABILITY_TIMEOUT = Number(process.env.DIRECTORY_STABILITY_TIMEOUT || 5000); // 5 seconds default
 
 const pending = new Set();
@@ -214,6 +215,7 @@ log.info(`🚀 Welcome! Starting Dewey, your intelligent audiobook migrator!`);
 
 // Ensure source directory exists
 await fs.ensureDir(SOURCE_DIR);
+await fs.ensureDir(TARGET_DIR);
 
 // Validate Claude on boot (non-fatal)
 await validateClaude(log);
