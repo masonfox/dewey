@@ -1,0 +1,6 @@
+{"level":30,"time":1760195675458,"pid":2791615,"hostname":"mason-pop-os","msg":"🚀 Welcome! Starting Dewey, your intelligent audiobook migrator!"}
+{"level":30,"time":1760195676432,"pid":2791615,"hostname":"mason-pop-os","msg":"🤖 Claude API validation successful (claude-3-5-haiku-20241022) ✅"}
+{"level":30,"time":1760195676432,"pid":2791615,"hostname":"mason-pop-os","msg":"📁 Watching: ./data/incoming"}
+{"level":30,"time":1760195676432,"pid":2791615,"hostname":"mason-pop-os","msg":"⏱️  Directory stability timeout: 5s"}
+{"level":30,"time":1760195676432,"pid":2791615,"hostname":"mason-pop-os","msg":"🔍 Poll interval: 200ms"}
+{"level":30,"time":1760195676432,"pid":2791615,"hostname":"mason-pop-os","msg":"=== ✅ Dewey is ready and watching! 👀 ===\n"}

@@ -1,0 +1,30 @@
+{
+  "name": "dewey",
+  "version": "1.0.0",
+  "description": "Audiobook migrator with Claude normalization",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js",
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
+    "test:watch": "NODE_OPTIONS='--experimental-vm-modules' jest --watch"
+  },
+  "dependencies": {
+    "axios": "^1.7.5",
+    "chokidar": "^3.6.0",
+    "dotenv": "^17.2.3",
+    "fs-extra": "^11.2.0",
+    "pino": "^9.3.1",
+    "pino-pretty": "^11.2.2"
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.2.0",
+    "jest": "^30.2.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "transform": {},
+    "testMatch": ["**/__tests__/**/*.test.js"]
+  }
+}
