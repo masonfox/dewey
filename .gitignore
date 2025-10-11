@@ -3,5 +3,4 @@ node_modules/
 package-lock.json
 
 # Ignore contents of incoming directory but keep the directory structure
-data/incoming/*
-!data/incoming/.gitignore
+data/*
