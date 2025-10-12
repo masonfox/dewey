@@ -7,6 +7,7 @@ import chokidar from 'chokidar';
 import pino from 'pino';
 import fs from 'fs-extra';
 import path from 'node:path';
+import http from 'node:http';
 import { JobQueue } from './jobQueue.js';
 import { validateClaude } from './claude.js';
 import { LOG_FILE, LOG_LEVEL, SOURCE_DIR, DEST_DIR, DIRECTORY_STABILITY_TIMEOUT } from './config.js';
@@ -42,6 +43,16 @@ const enqueue = async (p) => {
   await jobQueue.enqueue(p);
 };
 
+// Application status for healthcheck
+let appStatus = {
+  ready: false,
+  watcherReady: false,
+  startTime: new Date().toISOString(),
+  lastActivity: null,
+  watchedPath: SOURCE_DIR(),
+  errors: []
+};
+
 log.info(`🚀 Welcome! Starting Dewey, your intelligent audiobook migrator!`);
 
 // Ensure source directory exists
@@ -59,12 +70,26 @@ setInterval(() => {
   jobQueue.cleanup();
 }, 300000);
 
+// Create a simple HTTP server for health status
+const server = http.createServer((req, res) => {
+  if (req.url === '/health' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(appStatus, null, 2));
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
+
+server.listen(8080, 'localhost', () => {
+  log.info('🏥 Health check server listening on /health');
+});
+
 log.info(`📁 Watching: ${SOURCE_DIR()}`);
 log.info(`⏱️  Directory stability timeout: ${DIRECTORY_STABILITY_TIMEOUT()/1000}s`);
 log.info(`🔍 Poll interval: ${Math.min(DIRECTORY_STABILITY_TIMEOUT() / 10, 200)}ms`);
-log.info("=== ✅ Dewey is ready and watching! 👀 ===\n");
 
-chokidar
+const watcher = chokidar
   .watch(SOURCE_DIR(), { 
     ignoreInitial: false, 
     depth: 3, 
@@ -75,11 +100,36 @@ chokidar
     ignorePermissionErrors: true,
     persistent: true
   })
-  .on('add', enqueue)
-  .on('addDir', enqueue)
-  .on('change', enqueue)
+  .on('ready', () => {
+    appStatus.watcherReady = true;
+    appStatus.ready = true;
+    log.info("=== ✅ Dewey is ready and watching! 👀 ===\n");
+  })
+  .on('add', (path) => {
+    appStatus.lastActivity = new Date().toISOString();
+    enqueue(path);
+  })
+  .on('addDir', (path) => {
+    appStatus.lastActivity = new Date().toISOString();
+    enqueue(path);
+  })
+  .on('change', (path) => {
+    appStatus.lastActivity = new Date().toISOString();
+    enqueue(path);
+  })
   .on('unlink', () => {})
   .on('unlinkDir', () => {})
-  .on('error', (err) => log.error(`❌ Watch error: ${String(err)}`));
+  .on('error', (err) => {
+    const errorMsg = `❌ Watch error: ${String(err)}`;
+    log.error(errorMsg);
+    appStatus.errors.push({
+      timestamp: new Date().toISOString(),
+      error: String(err)
+    });
+    // Keep only last 10 errors
+    if (appStatus.errors.length > 10) {
+      appStatus.errors = appStatus.errors.slice(-10);
+    }
+  });
 
 

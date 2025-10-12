@@ -25,8 +25,8 @@ COPY src ./src
 
 VOLUME ["/data/incoming", "/data/library", "/data/logs"]
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "process.exit(require('fs').existsSync(process.env.SOURCE_DIR)?0:1)"
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD node src/healthcheck.js
 
 CMD ["node", "src/index.js"]
 
