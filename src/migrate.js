@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'fs-extra';
 import { normalizeViaClaude } from './claude.js';
 import { heuristicsFromName, sanitizeSegment, isAudio } from './utils.js';
+import { JobType } from './job.js';
 
 const SOURCE_DIR = process.env.SOURCE_DIR || './data/incoming';
 const DEST_DIR = process.env.DEST_DIR || './data/library';
@@ -11,7 +12,7 @@ const PUID = Number(process.env.PUID || 0);
 const PGID = Number(process.env.PGID || 0);
 
 // Returns canonical, normalized author and title for migration
-function getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle, log, jobId }) {
+function getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle, log }) {
   let authorRaw = meta?.author || heuristics?.author || 'Unknown';
   let titleRaw = meta?.title || heuristics?.title || fallbackTitle;
   
@@ -20,7 +21,7 @@ function getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle, log, jobId }
   
   // Log warning if we couldn't determine a proper author
   if (author === 'Unknown') {
-    log?.warn(`[${jobId}] ⚠️  Could not determine author, using "Unknown" for "${fallbackTitle}"`);
+    log?.warn(`⚠️  Could not determine author, using "Unknown" for "${fallbackTitle}"`);
   }
   
   return {
@@ -38,7 +39,94 @@ export async function migratePath(p, log) {
   return migrateFileAsDir(p, log);
 }
 
-// Generate a short job ID based on the source name
+/**
+ * Main entry point for migrating a job - works with the new Job system
+ */
+export async function migrateJob(job, log) {
+  if (job.type === JobType.FILE) {
+    return await migrateJobFile(job, log);
+  } else if (job.type === JobType.DIRECTORY) {
+    return await migrateJobDirectory(job, log);
+  } else {
+    throw new Error(`Unsupported job type: ${job.type}`);
+  }
+}
+
+/**
+ * Migrate a single file job
+ */
+async function migrateJobFile(job, log) {
+  const file = job.sourcePath;
+  const base = job.displayName;
+  
+  if (!isAudio(file)) {
+    throw new Error(`Skipping non-audio file: "${base}"`);
+  }
+
+  const heuristics = heuristicsFromName(base, path.dirname(file));
+  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log)) || {};
+  const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: path.parse(base).name, log });
+  const bookDir = path.join(DEST_DIR, author, title);
+  await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE, 8) });
+
+  // Copy the file with its original name - no renaming
+  const target = path.join(bookDir, base);
+  await fs.copy(file, target, { overwrite: true });
+  await applyPerms(bookDir);
+
+  await fs.remove(file);
+  log.info(`📚 Migrated: "${base}" → "${author} / ${title}"`);
+  
+  return { author, title, files: 1 };
+}
+
+/**
+ * Migrate a directory job
+ */
+async function migrateJobDirectory(job, log) {
+  const dir = job.sourcePath;
+  const base = job.displayName;
+
+  // Copy only audio files from this directory (non-recursive)
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  let copiedFiles = 0;
+  const audioFiles = [];
+  
+  // First, collect all audio files in this directory
+  for (const e of entries) {
+    const src = path.join(dir, e.name);
+    if (e.isDirectory()) continue;
+    if (!isAudio(src)) continue;
+    audioFiles.push({ src, name: e.name });
+  }
+
+  // If this directory has no audio files, don't process it as a book
+  if (audioFiles.length === 0) {
+    throw new Error(`Skipping directory with no audio files: "${base}"`);
+  }
+
+  const heuristics = heuristicsFromName(base, null);
+  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log)) || {};
+  const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: base, log });
+  const bookDir = path.join(DEST_DIR, author, title);
+  await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE, 8) });
+
+  // Copy the audio files
+  for (const { src, name } of audioFiles) {
+    const target = path.join(bookDir, name);
+    await fs.copy(src, target, { overwrite: true });
+    copiedFiles++;
+  }
+
+  await applyPerms(bookDir);
+  await fs.remove(dir);
+  
+  log.info(`📚 Migrated directory: "${base}" → "${author} / ${title}" (${copiedFiles} files)`);
+  
+  return { author, title, files: copiedFiles };
+}
+
+// Generate a short job ID based on the source name (legacy function, kept for compatibility)
 function generateJobId(sourceName) {
   // Take first 6 characters of base64 encoded hash for short, readable ID
   const hash = Buffer.from(sourceName).toString('base64').replace(/[+/=]/g, '').slice(0, 6);
@@ -104,7 +192,7 @@ export async function discoverMigrationUnits(rootDir) {
 }
 
 // Clean up empty directories recursively
-export async function cleanupEmptyDirectories(rootDir, log) {
+export async function cleanupEmptyDirectories(rootDir, log, preserveRoot = null) {
   try {
     const entries = await fs.readdir(rootDir, { withFileTypes: true });
     
@@ -112,12 +200,13 @@ export async function cleanupEmptyDirectories(rootDir, log) {
     for (const entry of entries) {
       if (entry.isDirectory()) {
         const subDir = path.join(rootDir, entry.name);
-        await cleanupEmptyDirectories(subDir, log);
+        await cleanupEmptyDirectories(subDir, log, preserveRoot);
         
         // After cleaning subdirectory, check if it's now empty
+        // but don't delete if it's the preserved root directory
         try {
           const subEntries = await fs.readdir(subDir);
-          if (subEntries.length === 0) {
+          if (subEntries.length === 0 && (!preserveRoot || path.resolve(subDir) !== path.resolve(preserveRoot))) {
             await fs.remove(subDir);
             log.info(`🧹 Cleaned up empty directory: "${entry.name}"`);
           }
@@ -132,35 +221,20 @@ export async function cleanupEmptyDirectories(rootDir, log) {
 }
 
 async function migrateFileAsDir(file, log) {
-  const base = path.basename(file);
-  const jobId = generateJobId(base);
+  const { Job } = await import('./job.js');
+  const job = await Job.fromPath(file);
+  const jobLog = job.createLogger(log);
   
-  if (!isAudio(file)) {
-    return log.warn(`[${jobId}] ⚠️  Skipping non-audio file: "${base}"`);
-  }
-
-  log.info(`[${jobId}] 🎵 Starting file migration: "${base}"`);
-  
-  const heuristics = heuristicsFromName(base, path.dirname(file));
-  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log)) || {};
-  const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: path.parse(base).name, log, jobId });
-  const bookDir = path.join(DEST_DIR, author, title);
-  await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE, 8) });
-
-  // Copy the file with its original name - no renaming
-  const target = path.join(bookDir, base);
-  await fs.copy(file, target, { overwrite: true });
-  await applyPerms(bookDir);
-
-  await fs.remove(file);
-  log.info(`[${jobId}] 📚 Migrated: "${base}" → "${author} / ${title}"`);
+  return await migrateJobFile(job, jobLog);
 }
 
 async function migrateDir(dir, log) {
   const base = path.basename(dir);
   
-  // Special handling for the incoming directory - process its contents instead of treating it as a book
-  if (base === 'incoming') {
+  // Special handling for the root SOURCE_DIR - process its contents instead of treating it as a book
+  const resolvedSourceDir = path.resolve(SOURCE_DIR);
+  const resolvedDir = path.resolve(dir);
+  if (resolvedDir === resolvedSourceDir) {
     // Batch discovery: find all migration units (directories with audio or loose audio files) upfront
     const migrationUnits = await discoverMigrationUnits(dir);
     
@@ -177,50 +251,17 @@ async function migrateDir(dir, log) {
     }
     
     // Clean up any empty directories left behind after processing
-    await cleanupEmptyDirectories(dir, log);
+    // but NEVER delete the root source directory itself
+    await cleanupEmptyDirectories(dir, log, dir);
     return;
   }
 
-  const jobId = generateJobId(base);
-  log.info(`[${jobId}] 📁 Starting directory migration: "${base}"`);
-
-  // Copy only audio files from this directory (non-recursive)
-  const entries = await fs.readdir(dir, { withFileTypes: true });
-  let copiedFiles = 0;
-  const audioFiles = [];
+  // Use the new job-based approach
+  const { Job } = await import('./job.js');
+  const job = await Job.fromPath(dir);
+  const jobLog = job.createLogger(log);
   
-  // First, collect all audio files in this directory
-  for (const e of entries) {
-    const src = path.join(dir, e.name);
-    if (e.isDirectory()) continue;
-    if (!isAudio(src)) continue;
-    audioFiles.push({ src, name: e.name });
-  }
-
-  // If this directory has no audio files, don't process it as a book
-  // (it's likely a container directory with subdirectories that have the actual audio)
-  if (audioFiles.length === 0) {
-    log.info(`[${jobId}] ⏭️  Skipping directory with no audio files: "${base}"`);
-    return;
-  }
-
-  const heuristics = heuristicsFromName(base, null);
-  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log)) || {};
-  const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: base, log, jobId });
-  const bookDir = path.join(DEST_DIR, author, title);
-  await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE, 8) });
-
-  // Copy the audio files
-  for (const { src, name } of audioFiles) {
-    const target = path.join(bookDir, name);
-    await fs.copy(src, target, { overwrite: true });
-    copiedFiles++;
-  }
-
-  await applyPerms(bookDir);
-  await fs.remove(dir);
-  
-  log.info(`[${jobId}] 📚 Migrated directory: "${base}" → "${author} / ${title}" (${copiedFiles} files)`);
+  return await migrateJobDirectory(job, jobLog);
 }
 
 async function applyPerms(target) {

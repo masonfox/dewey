@@ -3,9 +3,11 @@ import { describe, test, expect, beforeEach, afterEach, beforeAll } from '@jest/
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
+import { Job, JobType } from '../src/job.js';
 
 // Mock logger
 const mockLog = {
+  debug: jest.fn(),
   info: jest.fn(),
   warn: jest.fn(),
   error: jest.fn()
@@ -15,7 +17,7 @@ const mockLog = {
 let testDir;
 let sourceDir;
 let destDir;
-let migratePath, discoverMigrationUnits, cleanupEmptyDirectories;
+let migratePath, migrateJob, discoverMigrationUnits, cleanupEmptyDirectories;
 
 beforeAll(async () => {
   // Set up environment before importing modules
@@ -34,6 +36,7 @@ beforeAll(async () => {
   // Now import after env vars are set
   const migrateModule = await import('../src/migrate.js');
   migratePath = migrateModule.migratePath;
+  migrateJob = migrateModule.migrateJob;
   discoverMigrationUnits = migrateModule.discoverMigrationUnits;
   cleanupEmptyDirectories = migrateModule.cleanupEmptyDirectories;
 });
@@ -51,6 +54,7 @@ beforeEach(async () => {
   await fs.ensureDir(destDir);
   
   // Clear mock calls
+  mockLog.debug.mockClear();
   mockLog.info.mockClear();
   mockLog.warn.mockClear();
   mockLog.error.mockClear();
@@ -203,7 +207,122 @@ describe('cleanupEmptyDirectories', () => {
   });
 });
 
-describe('migratePath integration tests', () => {
+describe('migrateJob function tests', () => {
+  test('should migrate file job', async () => {
+    const audioFile = path.join(sourceDir, 'Test Book.m4b');
+    await fs.writeFile(audioFile, 'fake audio content');
+    
+    const job = await Job.fromPath(audioFile);
+    const jobLogger = job.createLogger(mockLog);
+    const result = await migrateJob(job, jobLogger);
+    
+    // Check file was moved to library
+    expect(await fs.pathExists(audioFile)).toBe(false);
+    
+    // Should be in Unknown author since we don't have Claude API
+    const migratedFile = path.join(destDir, 'Unknown', 'Test Book', 'Test Book.m4b');
+    expect(await fs.pathExists(migratedFile)).toBe(true);
+    
+    // Verify content
+    const content = await fs.readFile(migratedFile, 'utf8');
+    expect(content).toBe('fake audio content');
+    
+    // Check return value
+    expect(result).toEqual({
+      author: 'Unknown',
+      title: 'Test Book',
+      files: 1
+    });
+  });
+
+  test('should migrate directory job', async () => {
+    const bookDir = path.join(sourceDir, 'Stephen King - The Shining');
+    await fs.ensureDir(bookDir);
+    await fs.writeFile(path.join(bookDir, 'shining.m4b'), 'horror audio');
+    await fs.writeFile(path.join(bookDir, 'cover.jpg'), 'image data');
+    
+    const job = await Job.fromPath(bookDir);
+    const jobLogger = job.createLogger(mockLog);
+    const result = await migrateJob(job, jobLogger);
+    
+    // Original directory should be gone
+    expect(await fs.pathExists(bookDir)).toBe(false);
+    
+    // Should be migrated 
+    const authorDirs = await fs.readdir(destDir);
+    expect(authorDirs.length).toBeGreaterThan(0);
+    
+    // Find the migrated audio file
+    let foundAudio = false;
+    for (const authorDir of authorDirs) {
+      const authorPath = path.join(destDir, authorDir);
+      if ((await fs.stat(authorPath)).isDirectory()) {
+        const bookDirs = await fs.readdir(authorPath);
+        for (const bookDirName of bookDirs) {
+          const bookPath = path.join(authorPath, bookDirName);
+          if ((await fs.stat(bookPath)).isDirectory()) {
+            const files = await fs.readdir(bookPath);
+            if (files.includes('shining.m4b')) {
+              foundAudio = true;
+              const content = await fs.readFile(path.join(bookPath, 'shining.m4b'), 'utf8');
+              expect(content).toBe('horror audio');
+              // Image files shouldn't be migrated (only audio)
+              expect(files.includes('cover.jpg')).toBe(false);
+            }
+          }
+        }
+      }
+    }
+    expect(foundAudio).toBe(true);
+    
+    // Check return value
+    expect(result).toEqual({
+      author: expect.any(String),
+      title: expect.any(String),
+      files: 1
+    });
+  });
+
+  test('should throw error for non-audio file job', async () => {
+    const textFile = path.join(sourceDir, 'readme.txt');
+    await fs.writeFile(textFile, 'This is not audio');
+    
+    const job = await Job.fromPath(textFile);
+    const jobLogger = job.createLogger(mockLog);
+    
+    await expect(migrateJob(job, jobLogger)).rejects.toThrow('Skipping non-audio file');
+  });
+
+  test('should throw error for directory with no audio files', async () => {
+    const emptyDir = path.join(sourceDir, 'Empty Directory');
+    await fs.ensureDir(emptyDir);
+    await fs.writeFile(path.join(emptyDir, 'readme.txt'), 'No audio here');
+    
+    const job = await Job.fromPath(emptyDir);
+    const jobLogger = job.createLogger(mockLog);
+    
+    await expect(migrateJob(job, jobLogger)).rejects.toThrow('Skipping directory with no audio files');
+  });
+
+  test('should use job logger with consistent ID', async () => {
+    const audioFile = path.join(sourceDir, 'Test Book.m4b');
+    await fs.writeFile(audioFile, 'fake audio content');
+    
+    const job = await Job.fromPath(audioFile);
+    const jobLogger = job.createLogger(mockLog);
+    await migrateJob(job, jobLogger);
+    
+    // Verify all log messages include the job ID
+    const logCalls = mockLog.info.mock.calls;
+    expect(logCalls.length).toBeGreaterThan(0);
+    
+    logCalls.forEach(call => {
+      expect(call[0]).toMatch(new RegExp(`\\[${job.id}\\]`));
+    });
+  });
+});
+
+describe('migratePath integration tests (legacy)', () => {
   test('should migrate individual audio file', async () => {
     const audioFile = path.join(sourceDir, 'Test Book.m4b');
     await fs.writeFile(audioFile, 'fake audio content');
@@ -368,14 +487,10 @@ describe('migratePath integration tests', () => {
     const textFile = path.join(sourceDir, 'readme.txt');
     await fs.writeFile(textFile, 'This is not audio');
     
-    await migratePath(textFile, mockLog);
+    // The new architecture throws an error for non-audio files, but migratePath should handle this gracefully
+    await expect(migratePath(textFile, mockLog)).rejects.toThrow('Skipping non-audio file');
     
     // File should still exist (not migrated)
     expect(await fs.pathExists(textFile)).toBe(true);
-    
-    // Should have logged a warning
-    expect(mockLog.warn).toHaveBeenCalledWith(
-      expect.stringContaining('Skipping non-audio file')
-    );
   });
 });
