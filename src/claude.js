@@ -1,4 +1,5 @@
 import axios from 'axios';
+import path from 'node:path';
 import { ANTHROPIC_API_KEY, CLAUDE_MODEL, ANTHROPIC_API_URL } from './config.js';
 
 // Rate limiting for Claude API
@@ -49,7 +50,23 @@ export async function normalizeViaClaude(name, fallbackAuthor, fallbackTitle, lo
     return null;
   }
   
-  const prompt = `Return STRICT JSON { "author": string, "title": string } for audiobook metadata. Do not include code fences or commentary. Input: ${name}`;
+  const prompt = `You are an expert audiobook librarian helping organize a digital library. Extract author and title from the filename/path below.
+
+CONTEXT: This is for the Dewey audiobook organizer that creates "[Author]/[Book Title]" directory structures. The file may be from a series, multi-part book, or have complex naming patterns.
+
+GUIDELINES:
+- Author should be the primary author's full name (e.g., "Stephen King", not "King, Stephen")
+- Title should be the main book title without series info, part numbers, or file extensions
+- For series: Include series name if it's part of the main title (e.g., "The Fellowship of the Ring" not just "Fellowship")
+- Remove technical prefixes like [M4B], [MP3], quality indicators, narrator names in parentheses
+- For multi-part files: Use the main title, ignore part numbers (001, 002, etc.)
+- Handle common patterns: "Author - Title", "Title by Author", "Series Book# - Title"
+- If uncertain, prefer keeping full descriptive titles over truncating
+
+INPUT: ${name}
+${parentDir ? `PARENT_DIR: ${path.basename(parentDir)}` : ''}
+
+Return ONLY valid JSON: { "author": "Full Author Name", "title": "Clean Book Title" }`;
   
   // Check rate limit before making request
   const waitTime = checkRateLimit(API_KEY);
