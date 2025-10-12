@@ -58,7 +58,7 @@ async function migrateJobFile(job, log) {
   }
 
   const heuristics = heuristicsFromName(base, path.dirname(file));
-  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log)) || {};
+  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, path.dirname(file))) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: path.parse(base).name, log });
   const bookDir = path.join(DEST_DIR(), author, title);
   await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
@@ -69,7 +69,7 @@ async function migrateJobFile(job, log) {
   await applyPerms(bookDir);
 
   await fs.remove(file);
-  log.info(`📚 Migrated: "${base}" → "${author} / ${title}"`);
+  log.info(`🎉 Migrated: "${base}" → "${author} / ${title}"` );
   
   return { author, title, files: 1 };
 }
@@ -100,7 +100,7 @@ async function migrateJobDirectory(job, log) {
   }
 
   const heuristics = heuristicsFromName(base, null);
-  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log)) || {};
+  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, src)) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: base, log });
   const bookDir = path.join(DEST_DIR(), author, title);
   await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
@@ -115,16 +115,9 @@ async function migrateJobDirectory(job, log) {
   await applyPerms(bookDir);
   await fs.remove(dir);
   
-  log.info(`📚 Migrated directory: "${base}" → "${author} / ${title}" (${copiedFiles} files)`);
+  log.info(`🎉 Migrated directory: "${base}" → "${author} / ${title}" (${copiedFiles} files)`);
   
   return { author, title, files: copiedFiles };
-}
-
-// Generate a short job ID based on the source name (legacy function, kept for compatibility)
-function generateJobId(sourceName) {
-  // Take first 6 characters of base64 encoded hash for short, readable ID
-  const hash = Buffer.from(sourceName).toString('base64').replace(/[+/=]/g, '').slice(0, 6);
-  return hash.toUpperCase();
 }
 
 // Recursively discover all migration units (directories with audio or loose audio files)
