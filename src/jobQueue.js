@@ -1,5 +1,6 @@
 import { Job, JobState, JobType } from './job.js';
 import { discoverMigrationUnits } from './migrate.js';
+import { isAudio } from './utils.js';
 import path from 'node:path';
 import fs from 'fs-extra';
 
@@ -142,7 +143,7 @@ export class JobQueue {
       if (!parentStat.isDirectory()) return null;
       
       const parentFiles = await fs.readdir(parentDir, { withFileTypes: true });
-      const audioFiles = parentFiles.filter(f => f.isFile() && /\.(mp3|m4b|flac|wav)$/i.test(f.name));
+      const audioFiles = parentFiles.filter(f => f.isFile() && isAudio(f.name));
       const allFiles = parentFiles.filter(f => f.isFile());
       
       // Process as directory if:

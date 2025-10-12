@@ -1,7 +1,7 @@
 import path from 'node:path';
 
 export function isAudio(p) {
-  return /\.(mp3|m4b)$/i.test(p);
+  return /\.(mp3|m4b|m4a)$/i.test(p);
 }
 
 export function sanitizeSegment(s) {
