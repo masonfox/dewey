@@ -376,7 +376,7 @@ export class JobQueue {
       this.processingJobs.add(job.id);
       job.setState(JobState.PROCESSING);
       
-      jobLogger.info(`▶️  Starting ${job.type} migration: "${job.displayName}"`);
+      jobLogger.info(`▶️ Starting ${job.type} migration: "${job.displayName}"`);
 
       // Import and execute migration
       const { migrateJob } = await import('./migrate.js');
