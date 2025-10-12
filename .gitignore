@@ -4,3 +4,4 @@ package-lock.json
 
 # Ignore contents of incoming directory but keep the directory structure
 data/*
+coverage/
