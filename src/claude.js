@@ -1,17 +1,15 @@
 import axios from 'axios';
+import { ANTHROPIC_API_KEY, CLAUDE_MODEL, ANTHROPIC_API_URL } from './config.js';
 
 // Rate limiting for Claude API
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 60000; // 1 minute
 const MAX_REQUESTS_PER_WINDOW = 45; // Leave some buffer under the 50/min limit
 
-function getConfig() {
-  const rawKey = process.env.ANTHROPIC_API_KEY || '';
+// Helper function to get cleaned API key
+function getCleanApiKey() {
   // Trim and remove surrounding quotes if provided like '"sk-..."'
-  const API_KEY = rawKey.trim().replace(/^['"]|['"]$/g, '');
-  const MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-haiku-20241022';
-  const API_URL = (process.env.ANTHROPIC_API_URL || 'https://api.anthropic.com').replace(/\/$/, '');
-  return { API_KEY, MODEL, API_URL };
+  return ANTHROPIC_API_KEY().trim().replace(/^['"]|['"]$/g, '');
 }
 
 function checkRateLimit(apiKey) {
@@ -45,7 +43,7 @@ async function sleep(ms) {
 }
 
 export async function normalizeViaClaude(name, fallbackAuthor, fallbackTitle, log) {
-  const { API_KEY, MODEL, API_URL } = getConfig();
+  const API_KEY = getCleanApiKey();
   if (!API_KEY) {
     log.warn('⚠️  Claude API key not set; using heuristics.');
     return null;
@@ -63,8 +61,8 @@ export async function normalizeViaClaude(name, fallbackAuthor, fallbackTitle, lo
   const maxRetries = 3;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const { data } = await axios.post(`${API_URL}/v1/messages`, {
-        model: MODEL,
+      const { data } = await axios.post(`${ANTHROPIC_API_URL()}/v1/messages`, {
+        model: CLAUDE_MODEL(),
         max_tokens: 1024,
         temperature: 0.2,
         messages: [{ role: 'user', content: prompt }]
@@ -111,14 +109,14 @@ export async function normalizeViaClaude(name, fallbackAuthor, fallbackTitle, lo
 }
 
 export async function validateClaude(log) {
-  const { API_KEY, MODEL, API_URL } = getConfig();
+  const API_KEY = getCleanApiKey();
   if (!API_KEY) {
     log.warn('⚠️  Claude API key not set; using heuristics');
     return false;
   }
   try {
-    const { data, status } = await axios.post(`${API_URL}/v1/messages`, {
-      model: MODEL,
+    const { data, status } = await axios.post(`${ANTHROPIC_API_URL()}/v1/messages`, {
+      model: CLAUDE_MODEL(),
       max_tokens: 16,
       temperature: 0,
       messages: [{ role: 'user', content: 'Return JSON {"ok": true} only.' }]
@@ -132,7 +130,7 @@ export async function validateClaude(log) {
       validateStatus: () => true
     });
     if (status >= 200 && status < 300) {
-      log.info(`🤖 Claude API validation successful (${MODEL}) ✅`);
+      log.info(`🤖 Claude API validation successful (${CLAUDE_MODEL()}) ✅`);
       return true;
     }
     const errText = data?.error?.message || data?.error || data || 'unknown error';

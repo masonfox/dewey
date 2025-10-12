@@ -3,13 +3,7 @@ import fs from 'fs-extra';
 import { normalizeViaClaude } from './claude.js';
 import { heuristicsFromName, sanitizeSegment, isAudio } from './utils.js';
 import { JobType } from './job.js';
-
-const SOURCE_DIR = process.env.SOURCE_DIR || './data/incoming';
-const DEST_DIR = process.env.DEST_DIR || './data/library';
-const FILE_MODE = process.env.FILE_MODE || '664';
-const DIR_MODE = process.env.DIR_MODE || '775';
-const PUID = Number(process.env.PUID || 0);
-const PGID = Number(process.env.PGID || 0);
+import { SOURCE_DIR, DEST_DIR, FILE_MODE, DIR_MODE, PUID, PGID } from './config.js';
 
 // Returns canonical, normalized author and title for migration
 function getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle, log }) {
@@ -66,8 +60,8 @@ async function migrateJobFile(job, log) {
   const heuristics = heuristicsFromName(base, path.dirname(file));
   const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log)) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: path.parse(base).name, log });
-  const bookDir = path.join(DEST_DIR, author, title);
-  await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE, 8) });
+  const bookDir = path.join(DEST_DIR(), author, title);
+  await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
 
   // Copy the file with its original name - no renaming
   const target = path.join(bookDir, base);
@@ -108,8 +102,8 @@ async function migrateJobDirectory(job, log) {
   const heuristics = heuristicsFromName(base, null);
   const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log)) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: base, log });
-  const bookDir = path.join(DEST_DIR, author, title);
-  await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE, 8) });
+  const bookDir = path.join(DEST_DIR(), author, title);
+  await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
 
   // Copy the audio files
   for (const { src, name } of audioFiles) {
@@ -232,7 +226,7 @@ async function migrateDir(dir, log) {
   const base = path.basename(dir);
   
   // Special handling for the root SOURCE_DIR - process its contents instead of treating it as a book
-  const resolvedSourceDir = path.resolve(SOURCE_DIR);
+  const resolvedSourceDir = path.resolve(SOURCE_DIR());
   const resolvedDir = path.resolve(dir);
   if (resolvedDir === resolvedSourceDir) {
     // Batch discovery: find all migration units (directories with audio or loose audio files) upfront
@@ -265,16 +259,16 @@ async function migrateDir(dir, log) {
 }
 
 async function applyPerms(target) {
-  try { await fs.chown(target, PUID, PGID); } catch {}
-  try { await fs.chmod(target, DIR_MODE); } catch {}
+  try { await fs.chown(target, PUID(), PGID()); } catch {}
+  try { await fs.chmod(target, DIR_MODE()); } catch {}
   const names = await fs.readdir(target).catch(() => []);
   for (const name of names) {
     const p = path.join(target, name);
     try {
       const s = await fs.stat(p);
-      if (s.isDirectory()) await fs.chmod(p, DIR_MODE);
-      else await fs.chmod(p, FILE_MODE);
-      try { await fs.chown(p, PUID, PGID); } catch {}
+      if (s.isDirectory()) await fs.chmod(p, DIR_MODE());
+      else await fs.chmod(p, FILE_MODE());
+      try { await fs.chown(p, PUID(), PGID()); } catch {}
     } catch {}
   }
 }
