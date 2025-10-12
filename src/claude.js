@@ -43,7 +43,7 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export async function normalizeViaClaude(name, fallbackAuthor, fallbackTitle, log) {
+export async function normalizeViaClaude(name, fallbackAuthor, fallbackTitle, log, parentDir = null) {
   const API_KEY = getCleanApiKey();
   if (!API_KEY) {
     log.warn('⚠️  Claude API key not set; using heuristics.');
@@ -94,7 +94,7 @@ Return ONLY valid JSON: { "author": "Full Author Name", "title": "Clean Book Tit
       const text = data?.content?.[0]?.text || '';
       const parsed = JSON.parse(text);
       if (!parsed?.author || !parsed?.title) throw new Error('missing fields');
-      log.info(`🤖 Claude normalization successful`);
+      log.info(`🤖 Claude normalization successful: "${parsed.author}" - "${parsed.title}"`);
       return parsed;
     } catch (err) {
       const status = err?.response?.status;
