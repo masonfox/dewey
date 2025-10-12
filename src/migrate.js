@@ -100,7 +100,7 @@ async function migrateJobDirectory(job, log) {
   }
 
   const heuristics = heuristicsFromName(base, null);
-  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, src)) || {};
+  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, dir)) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: base, log });
   const bookDir = path.join(DEST_DIR(), author, title);
   await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
