@@ -5,6 +5,17 @@ import { heuristicsFromName, sanitizeSegment, isAudio } from './utils.js';
 import { JobType } from './job.js';
 import { SOURCE_DIR, DEST_DIR, FILE_MODE, DIR_MODE, PUID, PGID } from './config.js';
 
+/**
+ * Custom error class for skipped migrations (not actual errors)
+ */
+export class SkipError extends Error {
+  constructor(message, reason = 'skip') {
+    super(message);
+    this.name = 'SkipError';
+    this.reason = reason;
+  }
+}
+
 // Returns canonical, normalized author and title for migration
 function getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle, log }) {
   let authorRaw = meta?.author || heuristics?.author || 'Unknown';
@@ -96,7 +107,7 @@ async function migrateJobDirectory(job, log) {
 
   // If this directory has no audio files, don't process it as a book
   if (audioFiles.length === 0) {
-    throw new Error(`Skipping directory with no audio files: "${base}"`);
+    throw new SkipError(`Skipping directory with no audio files: "${base}"`, 'no-audio-files');
   }
 
   const heuristics = heuristicsFromName(base, null);
@@ -114,6 +125,9 @@ async function migrateJobDirectory(job, log) {
 
   await applyPerms(bookDir);
   await fs.remove(dir);
+  
+  // Clean up any empty parent directories that might have been left behind
+  await cleanupEmptyParentDirectories(dir, log);
   
   log.info(`🎉 Migrated directory: "${base}" → "${author} / ${title}" (${copiedFiles} files)`);
   
@@ -176,6 +190,30 @@ export async function discoverMigrationUnits(rootDir) {
   await traverse(rootDir, true);
   
   return units;
+}
+
+// Clean up empty parent directories after removing a directory
+async function cleanupEmptyParentDirectories(removedDir, log) {
+  const sourceDir = path.resolve(SOURCE_DIR());
+  let currentDir = path.dirname(removedDir);
+  
+  // Walk up the directory tree and remove empty directories
+  while (currentDir !== sourceDir && currentDir !== path.dirname(currentDir)) {
+    try {
+      const entries = await fs.readdir(currentDir);
+      if (entries.length === 0) {
+        await fs.remove(currentDir);
+        log.info(`🧹 Cleaned up empty parent directory: "${path.basename(currentDir)}"`);
+        currentDir = path.dirname(currentDir);
+      } else {
+        // Directory is not empty, stop cleanup
+        break;
+      }
+    } catch (error) {
+      // Directory might not exist or be accessible, stop cleanup
+      break;
+    }
+  }
 }
 
 // Clean up empty directories recursively

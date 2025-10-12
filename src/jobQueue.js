@@ -1,5 +1,5 @@
 import { Job, JobState, JobType } from './job.js';
-import { discoverMigrationUnits } from './migrate.js';
+import { discoverMigrationUnits, SkipError } from './migrate.js';
 import { isAudio } from './utils.js';
 import path from 'node:path';
 import fs from 'fs-extra';
@@ -79,6 +79,16 @@ export class JobQueue {
         const parentJob = await this.checkForParentDirectoryJob(resolvedPath);
         if (parentJob) {
           this.logger?.debug(`📁 File "${job.displayName}" will be processed with parent directory "${parentJob.displayName}"`);
+          return;
+        }
+      }
+
+      // For directories, check if this directory has nested structure with audio files
+      // If so, only enqueue the deepest directories that contain audio files
+      if (job.type === JobType.DIRECTORY) {
+        const shouldSkipParent = await this.shouldSkipParentDirectory(resolvedPath);
+        if (shouldSkipParent) {
+          this.logger?.debug(`⏭️  Skipping parent directory "${job.displayName}" - will process child directories instead`);
           return;
         }
       }
@@ -167,6 +177,71 @@ export class JobQueue {
     }
     
     return null;
+  }
+
+  /**
+   * Check if a parent directory should be skipped because its child directories contain audio files
+   */
+  async shouldSkipParentDirectory(dirPath) {
+    try {
+      const entries = await fs.readdir(dirPath, { withFileTypes: true });
+      
+      // Check if this directory has direct audio files
+      const hasDirectAudioFiles = entries.some(entry => !entry.isDirectory() && isAudio(entry.name));
+      
+      // If it has direct audio files, don't skip it
+      if (hasDirectAudioFiles) {
+        return false;
+      }
+      
+      // Check if any subdirectories contain audio files
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const subDirPath = path.join(dirPath, entry.name);
+          const hasAudioInSubdir = await this.directoryContainsAudio(subDirPath);
+          if (hasAudioInSubdir) {
+            // This parent directory should be skipped since its child will be processed
+            return true;
+          }
+        }
+      }
+      
+      return false;
+    } catch (error) {
+      // If we can't read the directory, don't skip it
+      return false;
+    }
+  }
+
+  /**
+   * Recursively check if a directory contains audio files
+   */
+  async directoryContainsAudio(dirPath) {
+    try {
+      const entries = await fs.readdir(dirPath, { withFileTypes: true });
+      
+      // Check direct audio files first
+      for (const entry of entries) {
+        if (!entry.isDirectory() && isAudio(entry.name)) {
+          return true;
+        }
+      }
+      
+      // Check subdirectories
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const subDirPath = path.join(dirPath, entry.name);
+          const hasAudio = await this.directoryContainsAudio(subDirPath);
+          if (hasAudio) {
+            return true;
+          }
+        }
+      }
+      
+      return false;
+    } catch (error) {
+      return false;
+    }
   }
 
   /**
@@ -301,7 +376,7 @@ export class JobQueue {
       this.processingJobs.add(job.id);
       job.setState(JobState.PROCESSING);
       
-      jobLogger.info(`🎵 Starting ${job.type} migration: "${job.displayName}"`);
+      jobLogger.info(`▶️  Starting ${job.type} migration: "${job.displayName}"`);
 
       // Import and execute migration
       const { migrateJob } = await import('./migrate.js');
@@ -313,11 +388,18 @@ export class JobQueue {
       jobLogger.info(`✅ Migration completed: "${job.displayName}"`);
 
     } catch (error) {
-      job.setState(JobState.FAILED, error);
       const jobLogger = job.createLogger(this.logger);
-      jobLogger.error(`❌ Migration failed for "${job.displayName}": ${error.message}`);
       
-      // TODO: Implement retry logic if needed
+      // Handle SkipError as a normal skip, not a failure
+      if (error.name === 'SkipError') {
+        job.setState(JobState.COMPLETED);
+        jobLogger.debug(`⏭️ Skipped: "${job.displayName}" - ${error.message}`);
+      } else {
+        job.setState(JobState.FAILED, error);
+        jobLogger.error(`❌ Migration failed for "${job.displayName}": ${error.message}`);
+        
+        // TODO: Implement retry logic if needed
+      }
       
     } finally {
       this.processingJobs.delete(job.id);

@@ -293,7 +293,7 @@ describe('migrateJob function tests', () => {
     await expect(migrateJob(job, jobLogger)).rejects.toThrow('Skipping non-audio file');
   });
 
-  test('should throw error for directory with no audio files', async () => {
+  test('should throw SkipError for directory with no audio files', async () => {
     const emptyDir = path.join(sourceDir, 'Empty Directory');
     await fs.ensureDir(emptyDir);
     await fs.writeFile(path.join(emptyDir, 'readme.txt'), 'No audio here');
@@ -301,7 +301,15 @@ describe('migrateJob function tests', () => {
     const job = await Job.fromPath(emptyDir);
     const jobLogger = job.createLogger(mockLog);
     
-    await expect(migrateJob(job, jobLogger)).rejects.toThrow('Skipping directory with no audio files');
+    // Verify it throws a SkipError with the correct properties
+    try {
+      await migrateJob(job, jobLogger);
+      expect(true).toBe(false); // Should not reach here
+    } catch (error) {
+      expect(error.name).toBe('SkipError');
+      expect(error.reason).toBe('no-audio-files');
+      expect(error.message).toContain('Skipping directory with no audio files');
+    }
   });
 
   test('should use job logger with consistent ID', async () => {
@@ -434,21 +442,7 @@ describe('migratePath integration tests (legacy)', () => {
     // Child directory should be removed after migration
     expect(await fs.pathExists(childDir)).toBe(false);
     
-    // Parent directory should still exist at this point (empty)
-    expect(await fs.pathExists(parentDir)).toBe(true);
-    
-    // Verify the parent is empty
-    const parentContents = await fs.readdir(parentDir);
-    expect(parentContents).toHaveLength(0);
-    
-    // The cleanup of empty parent directories should happen in the main processing loop
-    // For this test, we'll manually trigger the cleanup to verify it works
-    const entries = await fs.readdir(parentDir);
-    if (entries.length === 0) {
-      await fs.remove(parentDir);
-    }
-    
-    // Parent should now be cleaned up
+    // Parent directory should now be automatically cleaned up by our new cleanup logic
     expect(await fs.pathExists(parentDir)).toBe(false);
     
     // Audio file should be migrated to destination
