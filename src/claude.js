@@ -6,7 +6,7 @@ const RATE_LIMIT_WINDOW = 60000; // 1 minute
 const MAX_REQUESTS_PER_WINDOW = 45; // Leave some buffer under the 50/min limit
 
 function getConfig() {
-  const rawKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || '';
+  const rawKey = process.env.ANTHROPIC_API_KEY || '';
   // Trim and remove surrounding quotes if provided like '"sk-..."'
   const API_KEY = rawKey.trim().replace(/^['"]|['"]$/g, '');
   const MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-haiku-20241022';

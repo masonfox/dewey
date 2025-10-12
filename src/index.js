@@ -10,7 +10,7 @@ import path from 'node:path';
 import { migratePath } from './migrate.js';
 import { validateClaude } from './claude.js';
 
-const LOG_FILE = process.env.LOG_FILE || './data/migrations.log';
+const LOG_FILE = process.env.LOG_FILE || './data/logs/migrations.log';
 await fs.ensureFile(LOG_FILE);
 
 const log = pino({
@@ -32,7 +32,7 @@ const log = pino({
 });
 
 const SOURCE_DIR = process.env.SOURCE_DIR || './data/incoming';
-const TARGET_DIR = process.env.TARGET_DIR || './data/library';
+const DEST_DIR = process.env.DEST_DIR || './data/library';
 const DIRECTORY_STABILITY_TIMEOUT = Number(process.env.DIRECTORY_STABILITY_TIMEOUT || 5000); // 5 seconds default
 
 const pending = new Set();
@@ -215,7 +215,7 @@ log.info(`🚀 Welcome! Starting Dewey, your intelligent audiobook migrator!`);
 
 // Ensure source directory exists
 await fs.ensureDir(SOURCE_DIR);
-await fs.ensureDir(TARGET_DIR);
+await fs.ensureDir(DEST_DIR);
 
 // Validate Claude on boot (non-fatal)
 await validateClaude(log);
