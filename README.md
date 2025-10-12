@@ -18,37 +18,11 @@ Node-based containerized watcher that organizes incoming audiobook files into a 
 ```bash
 docker run -d --name dewey \
   -e ANTHROPIC_API_KEY=sk-ant-xxxx \
-  -v $(pwd)/incoming:/data/incoming \
-  -v $(pwd)/library:/data/library \
-  -v $(pwd)/logs:/data/logs \
+  -v your/path/to/incoming:/data/incoming \
+  -v your/path/to/library:/data/library \
+  -v your/path/to/logs:/data/logs \
   ghcr.io/masonfox/dewey:latest
 ```
-
-### Requirements
-- **Claude API Key**: Anthropic API key for intelligent metadata normalization
-- **Docker**: For containerized deployment (recommended)
-- **Node.js 20+**: For local development/testing
-
-### Environment Variables
-
-#### Core Configuration
-- `SOURCE_DIR` (default: `/data/incoming`): Directory to watch for incoming audiobooks
-- `DEST_DIR` (default: `/data/library`): Target library directory for organized files
-- `LOG_FILE` (default: `/data/migrations.log`): Path to persistent log file
-- `LOG_LEVEL` (default: `info`): Logging level (`trace`, `debug`, `info`, `warn`, `error`)
-
-#### Claude AI Configuration  
-- `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY`: **Required** - Your Anthropic API key
-- `CLAUDE_MODEL` (default: `claude-3-5-haiku-20241022`): Claude model to use for normalization
-- `ANTHROPIC_API_URL` (default: `https://api.anthropic.com`): Alternative API endpoint
-
-#### Processing Behavior
-- `DIRECTORY_STABILITY_TIMEOUT` (default: `5000`): Milliseconds to wait for directory stability before processing
-
-#### File System Permissions
-- `PUID`/`PGID` (default: `0`/`0`): User/group ownership for migrated files
-- `FILE_MODE` (default: `664`): Permission mode for migrated files
-- `DIR_MODE` (default: `775`): Permission mode for created directories
 
 ### Local Development
 
@@ -56,10 +30,8 @@ docker run -d --name dewey \
 # Install dependencies
 yarn install
 
-# Set environment variables (create .env file or export)
-export ANTHROPIC_API_KEY=sk-ant-xxxx
-export SOURCE_DIR=./data/incoming
-export DEST_DIR=./data/library
+# Set environment variables
+cp .env.example .env
 
 # Run the application
 yarn start
