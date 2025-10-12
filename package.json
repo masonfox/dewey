@@ -1,7 +1,9 @@
 {
   "name": "dewey",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Audiobook migrator with Claude normalization",
+  "license": "MIT",
+  "author": "Mason Fox <masonfox22@gmail.com>",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
