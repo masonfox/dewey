@@ -4,7 +4,7 @@ FROM node:20-slim
 
 ENV SOURCE_DIR=/data/incoming \
     DEST_DIR=/data/library \
-    LOG_FILE=/data/logging/migrations.log \
+    LOG_FILE=/data/logs/migrations.log \
     LOG_LEVEL=info \
     ANTHROPIC_API_KEY= \
     CLAUDE_MODEL=claude-3-5-haiku-20241022 \
