@@ -27,15 +27,19 @@ const hasApiKey = () => {
 // Simple mock logger that tracks calls without using mock()
 const createMockLog = () => ({
   debug: (...args) => { 
+    console.log('[DEBUG]', ...args);
     mockLog._calls.debug.push(args); 
   },
   info: (...args) => { 
+    console.log('[INFO]', ...args);
     mockLog._calls.info.push(args); 
   },
   warn: (...args) => { 
+    console.log('[WARN]', ...args);
     mockLog._calls.warn.push(args); 
   },
   error: (...args) => { 
+    console.log('[ERROR]', ...args);
     mockLog._calls.error.push(args); 
   },
   _calls: { debug: [], info: [], warn: [], error: [] },
@@ -75,8 +79,18 @@ beforeAll(async () => {
   process.env.DIR_MODE = '775';
 
   // Import migration module after env vars are set
-  const migrateModule = await import('../src/migrate.js');
+  console.log(`[IMPORT] About to import migrate.js`);
+  
+  // Force fresh import by adding timestamp to prevent module caching issues
+  const migratePath = '../src/migrate.js?t=' + Date.now();
+  console.log(`[IMPORT] Importing with cache bust: ${migratePath}`);
+  
+  const migrateModule = await import(migratePath);
+  console.log(`[IMPORT] Import successful. migrateModule keys:`, Object.keys(migrateModule));
+  console.log(`[IMPORT] migrateJob type:`, typeof migrateModule.migrateJob);
+  
   migrateJob = migrateModule.migrateJob;
+  console.log(`[IMPORT] Assigned migrateJob, type:`, typeof migrateJob);
 });
 
 beforeEach(async () => {
@@ -116,6 +130,26 @@ describe('End-to-End Integration Tests', () => {
     const bookDir = path.join(authorDir, expectedTitle);
     const migratedFile = path.join(bookDir, expectedFilename);
 
+    // Debug: Show what we're looking for vs what exists
+    console.log(`[DEBUG] Looking for author dir: ${authorDir}`);
+    console.log(`[DEBUG] destDir exists: ${await fs.pathExists(destDir)}`);
+
+    if (await fs.pathExists(destDir)) {
+      const contents = await fs.readdir(destDir);
+      console.log(`[DEBUG] destDir contents: ${JSON.stringify(contents)}`);
+
+      for (const item of contents) {
+        const itemPath = path.join(destDir, item);
+        const isDir = (await fs.stat(itemPath)).isDirectory();
+        if (isDir) {
+          const subContents = await fs.readdir(itemPath);
+          console.log(`[DEBUG]   ${item}/ -> ${JSON.stringify(subContents)}`);
+        }
+      }
+    } else {
+      console.log(`[DEBUG] destDir does not exist!`);
+    }
+
     expect(await fs.pathExists(authorDir)).toBe(true);
     expect(await fs.pathExists(bookDir)).toBe(true);
     expect(await fs.pathExists(migratedFile)).toBe(true);
@@ -137,10 +171,13 @@ describe('End-to-End Integration Tests', () => {
       const job = new Job(sourcePath, JobType.FILE);
 
       // Migrate the file (migrateJob doesn't manage state, so we do it manually)
+      console.log(`[TEST] About to call migrateJob for job ${job.id}`);
       try {
         const result = await migrateJob(job, mockLog);
+        console.log(`[TEST] Migration completed with result:`, result);
         job.setState(JobState.COMPLETED);
       } catch (error) {
+        console.log(`[TEST] Migration failed:`, error.message);
         job.setState(JobState.FAILED, error);
         throw error;
       }
