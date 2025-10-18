@@ -42,21 +42,21 @@ export async function migratePath(p, log) {
  * Main entry point for migrating a job - works with the new Job system
  */
 export async function migrateJob(job, log) {
-  log.info(`🎬 migrateJob called with job type: ${job.type}, id: ${job.id}, sourcePath: ${job.sourcePath}`);
+  log.debug(`🎬 migrateJob called with job type: ${job.type}, id: ${job.id}, sourcePath: ${job.sourcePath}`);
   
   try {
     let result;
     if (job.type === JobType.FILE) {
-      log.info(`📄 Calling migrateJobFile for ${job.id}`);
+      log.debug(`📄 Calling migrateJobFile for ${job.id}`);
       result = await migrateJobFile(job, log);
     } else if (job.type === JobType.DIRECTORY) {
-      log.info(`📁 Calling migrateJobDirectory for ${job.id}`);
+      log.debug(`📁 Calling migrateJobDirectory for ${job.id}`);
       result = await migrateJobDirectory(job, log);
     } else {
       throw new Error(`Unsupported job type: ${job.type}`);
     }
     
-    log.info(`✅ migrateJob completed successfully for ${job.id}:`, result);
+    log.debug(`✅ migrateJob completed successfully for ${job.id}:`, result);
     return result;
   } catch (error) {
     log.error(`❌ migrateJob failed for ${job.id}: ${error.message}`);
@@ -76,7 +76,7 @@ async function migrateJobFile(job, log) {
     throw new Error(`Skipping non-audio file: "${base}"`);
   }
 
-  log.info(`🚀 Starting file migration: ${file}`);
+  log.debug(`🚀 Starting file migration: ${file}`);
   
   // Verify source file exists and get stats
   if (!(await fs.pathExists(file))) {
@@ -84,7 +84,7 @@ async function migrateJobFile(job, log) {
   }
   
   const sourceStats = await fs.stat(file);
-  log.info(`📊 Source file size: ${sourceStats.size} bytes`);
+  log.debug(`📊 Source file size: ${sourceStats.size} bytes`);
 
   const heuristics = heuristicsFromName(base, path.dirname(file));
   const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, path.dirname(file))) || {};
@@ -94,8 +94,8 @@ async function migrateJobFile(job, log) {
   const bookDir = path.join(destDirRoot, author, title);
   const target = path.join(bookDir, base);
   
-  log.info(`📁 Target directory: ${bookDir}`);
-  log.info(`📋 Target file: ${target}`);
+  log.debug(`📁 Target directory: ${bookDir}`);
+  log.debug(`📋 Target file: ${target}`);
   
   try {
     // Check if destination root exists and is writable
@@ -104,20 +104,20 @@ async function migrateJobFile(job, log) {
     }
     
     const destRootStats = await fs.stat(destDirRoot);
-    log.info(`📊 Dest root stats - mode: ${destRootStats.mode.toString(8)}, uid: ${destRootStats.uid}, gid: ${destRootStats.gid}`);
+    log.debug(`📊 Dest root stats - mode: ${destRootStats.mode.toString(8)}, uid: ${destRootStats.uid}, gid: ${destRootStats.gid}`);
     
     // Try to create a test file to verify write permissions
     const testFile = path.join(destDirRoot, '.write-test-' + Date.now());
     try {
       await fs.writeFile(testFile, 'test');
       await fs.remove(testFile);
-      log.info(`✅ Write permission verified for ${destDirRoot}`);
+      log.debug(`✅ Write permission verified for ${destDirRoot}`);
     } catch (writeTestError) {
       throw new Error(`Cannot write to destination directory ${destDirRoot}: ${writeTestError.message}`);
     }
     
     // Create the book directory
-    log.info(`📁 Creating directory: ${bookDir}`);
+    log.debug(`📁 Creating directory: ${bookDir}`);
     await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
     
     // Verify directory was created
@@ -127,7 +127,7 @@ async function migrateJobFile(job, log) {
     log.info(`✅ Directory created successfully: ${bookDir}`);
 
     // Copy the file with its original name - no renaming
-    log.info(`📋 Copying file from ${file} to ${target}`);
+    log.debug(`📋 Copying file from ${file} to ${target}`);
     
     // Try using Node.js built-in copyFile which might be more reliable in CI
     try {
@@ -146,12 +146,12 @@ async function migrateJobFile(job, log) {
     }
     
     const targetStats = await fs.stat(target);
-    log.info(`📊 Target file size: ${targetStats.size} bytes`);
+    log.debug(`📊 Target file size: ${targetStats.size} bytes`);
     
     if (sourceStats.size !== targetStats.size) {
       throw new Error(`File copy verification failed: size mismatch (source: ${sourceStats.size}, target: ${targetStats.size})`);
     }
-    log.info(`✅ File copy verified: ${sourceStats.size} bytes`);
+    log.debug(`✅ File copy verified: ${sourceStats.size} bytes`);
     
     await applyPerms(bookDir);
     
@@ -188,7 +188,7 @@ async function migrateJobDirectory(job, log) {
   const dir = job.sourcePath;
   const base = job.displayName;
 
-  log.info(`🚀 Starting directory migration: ${dir}`);
+  log.debug(`🚀 Starting directory migration: ${dir}`);
 
   // Copy only audio files from this directory (non-recursive)
   const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -203,7 +203,7 @@ async function migrateJobDirectory(job, log) {
     audioFiles.push({ src, name: e.name });
   }
 
-  log.info(`📊 Found ${audioFiles.length} audio files in directory`);
+  log.debug(`📊 Found ${audioFiles.length} audio files in directory`);
 
   // If this directory has no audio files, don't process it as a book
   if (audioFiles.length === 0) {
@@ -217,7 +217,7 @@ async function migrateJobDirectory(job, log) {
   const destDirRoot = DEST_DIR();
   const bookDir = path.join(destDirRoot, author, title);
   
-  log.info(`📁 Target directory: ${bookDir}`);
+  log.debug(`📁 Target directory: ${bookDir}`);
   
   try {
     // Check destination permissions
@@ -226,10 +226,10 @@ async function migrateJobDirectory(job, log) {
     }
     
     const destRootStats = await fs.stat(destDirRoot);
-    log.info(`📊 Dest root stats - mode: ${destRootStats.mode.toString(8)}, uid: ${destRootStats.uid}, gid: ${destRootStats.gid}`);
+    log.debug(`📊 Dest root stats - mode: ${destRootStats.mode.toString(8)}, uid: ${destRootStats.uid}, gid: ${destRootStats.gid}`);
     
     // Create the book directory
-    log.info(`📁 Creating directory: ${bookDir}`);
+    log.debug(`📁 Creating directory: ${bookDir}`);
     await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
     
     // Verify directory was created
@@ -241,7 +241,7 @@ async function migrateJobDirectory(job, log) {
     // Copy the audio files with verification
     for (const { src, name } of audioFiles) {
       const target = path.join(bookDir, name);
-      log.info(`📋 Copying file from ${src} to ${target}`);
+      log.debug(`📋 Copying file from ${src} to ${target}`);
       
       const sourceStats = await fs.stat(src);
       
@@ -266,7 +266,7 @@ async function migrateJobDirectory(job, log) {
       if (sourceStats.size !== targetStats.size) {
         throw new Error(`File copy verification failed for "${name}": size mismatch (source: ${sourceStats.size}, target: ${targetStats.size})`);
       }
-      log.info(`✅ File copy verified: ${name} (${sourceStats.size} bytes)`);
+      log.debug(`✅ File copy verified: ${name} (${sourceStats.size} bytes)`);
       copiedFiles++;
     }
 
