@@ -21,7 +21,9 @@ import { Job, JobType, JobState } from '../src/job.js';
 // Check if we have an API key for integration tests
 const hasApiKey = () => {
   const key = process.env.ANTHROPIC_API_KEY;
-  return key && key.trim() !== '' && key.startsWith('sk-ant-');
+  const hasKey = key && key.trim() !== '' && key.startsWith('sk-ant-');
+  console.log(`[hasApiKey] ANTHROPIC_API_KEY present: ${!!key}, starts with sk-ant: ${key?.startsWith('sk-ant-')}, hasKey: ${hasKey}`);
+  return hasKey;
 };
 
 // Simple mock logger that tracks calls without using mock()
@@ -108,6 +110,26 @@ describe('End-to-End Integration Tests', () => {
     const bookDir = path.join(authorDir, expectedTitle);
     const migratedFile = path.join(bookDir, expectedFilename);
 
+    // Debug: Show what we're looking for vs what exists
+    console.log(`[VERIFY] Looking for author dir: ${authorDir}`);
+    console.log(`[VERIFY] destDir exists: ${await fs.pathExists(destDir)}`);
+
+    if (await fs.pathExists(destDir)) {
+      const contents = await fs.readdir(destDir);
+      console.log(`[VERIFY] destDir contents: ${JSON.stringify(contents)}`);
+
+      for (const item of contents) {
+        const itemPath = path.join(destDir, item);
+        const isDir = (await fs.stat(itemPath)).isDirectory();
+        if (isDir) {
+          const subContents = await fs.readdir(itemPath);
+          console.log(`[VERIFY]   ${item}/ -> ${JSON.stringify(subContents)}`);
+        }
+      }
+    } else {
+      console.log(`[VERIFY] destDir does not exist!`);
+    }
+
     expect(await fs.pathExists(authorDir)).toBe(true);
     expect(await fs.pathExists(bookDir)).toBe(true);
     expect(await fs.pathExists(migratedFile)).toBe(true);
@@ -120,6 +142,18 @@ describe('End-to-End Integration Tests', () => {
     const testIf = hasApiKey() ? test : test.skip;
 
     testIf('should migrate single audiobook file using Claude API', async () => {
+      // Debug environment state
+      console.log(`[ENV DEBUG] testDir: ${testDir}`);
+      console.log(`[ENV DEBUG] sourceDir: ${sourceDir}`);
+      console.log(`[ENV DEBUG] destDir: ${destDir}`);
+      console.log(`[ENV DEBUG] process.env.SOURCE_DIR: ${process.env.SOURCE_DIR}`);
+      console.log(`[ENV DEBUG] process.env.DEST_DIR: ${process.env.DEST_DIR}`);
+
+      // Import and check config
+      const { DEST_DIR, SOURCE_DIR } = await import('../src/config.js');
+      console.log(`[ENV DEBUG] config.SOURCE_DIR(): ${SOURCE_DIR()}`);
+      console.log(`[ENV DEBUG] config.DEST_DIR(): ${DEST_DIR()}`);
+
       // Create a test file with a well-known book
       const filename = 'Stephen King - The Shining.m4b';
       const sourcePath = await createAudioFile(filename);
@@ -128,10 +162,14 @@ describe('End-to-End Integration Tests', () => {
       const job = new Job(sourcePath, JobType.FILE);
 
       // Migrate the file (migrateJob doesn't manage state, so we do it manually)
+      console.log(`[MIGRATION] Starting migration for job ${job.id}`);
       try {
         await migrateJob(job, mockLog);
+        console.log(`[MIGRATION] Migration completed successfully`);
         job.setState(JobState.COMPLETED);
       } catch (error) {
+        console.log(`[MIGRATION] Migration FAILED: ${error.message}`);
+        console.log(`[MIGRATION] Error stack: ${error.stack}`);
         job.setState(JobState.FAILED, error);
         throw error;
       }
