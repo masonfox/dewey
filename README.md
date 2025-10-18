@@ -38,7 +38,12 @@ bun start
 
 # Run tests
 bun test
+
+# Run tests with full integration test coverage (requires API key)
+ANTHROPIC_API_KEY=sk-ant-xxx bun test
 ```
+
+**Note on Testing**: Integration tests requiring Claude API access will be automatically skipped if `ANTHROPIC_API_KEY` is not set. This allows the test suite to run in CI without API credentials while still providing comprehensive coverage for core functionality.
 
 Drop `.mp3`/`.m4b` files or directories into the `incoming/` directory. Dewey will automatically detect and migrate them to your organized library.
 

@@ -31,6 +31,9 @@ jobs:
 
       - name: Run tests
         run: bun test
+        env:
+          # Set API key from GitHub secrets if available (optional - tests will skip if not set)
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
