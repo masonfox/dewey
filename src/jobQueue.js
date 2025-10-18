@@ -1,5 +1,6 @@
 import { Job, JobState, JobType } from './job.js';
-import { discoverMigrationUnits, SkipError } from './migrate.js';
+import { discoverMigrationUnits } from './migrate.js';
+import { SkipError, isRetryable, isSkippable } from './errors.js';
 import { isAudio } from './utils.js';
 import path from 'node:path';
 import fs from 'fs-extra';
@@ -389,18 +390,22 @@ export class JobQueue {
 
     } catch (error) {
       const jobLogger = job.createLogger(this.logger);
-      
+
       // Handle SkipError as a normal skip, not a failure
-      if (error.name === 'SkipError') {
+      if (isSkippable(error)) {
         job.setState(JobState.COMPLETED);
         jobLogger.debug(`⏭️ Skipped: "${job.displayName}" - ${error.message}`);
+      } else if (isRetryable(error) && job.canRetry()) {
+        // Retry logic for transient errors
+        jobLogger.warn(`🔄 Retryable error for "${job.displayName}": ${error.message} - will retry (${job.retryCount + 1}/${job.maxRetries})`);
+        job.retry();
+        this.scheduleBatchProcess();
       } else {
+        // Permanent failure
         job.setState(JobState.FAILED, error);
         jobLogger.error(`❌ Migration failed for "${job.displayName}": ${error.message}`);
-        
-        // TODO: Implement retry logic if needed
       }
-      
+
     } finally {
       this.processingJobs.delete(job.id);
     }

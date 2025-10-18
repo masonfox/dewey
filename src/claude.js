@@ -1,6 +1,7 @@
 import axios from 'axios';
 import path from 'node:path';
 import { ANTHROPIC_API_KEY, CLAUDE_MODEL, ANTHROPIC_API_URL } from './config.js';
+import { ClaudeError, RetryableError } from './errors.js';
 
 // Rate limiting for Claude API
 const rateLimitMap = new Map();
@@ -99,7 +100,7 @@ Return ONLY valid JSON: { "author": "Full Author Name", "title": "Clean Book Tit
     } catch (err) {
       const status = err?.response?.status;
       const body = err?.response?.data;
-      
+
       // Handle rate limiting with exponential backoff
       if (status === 429 && attempt < maxRetries) {
         const backoffTime = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
@@ -107,7 +108,7 @@ Return ONLY valid JSON: { "author": "Full Author Name", "title": "Clean Book Tit
         await sleep(backoffTime);
         continue;
       }
-      
+
       // Handle other retryable errors
       if ((status >= 500 || status === 408) && attempt < maxRetries) {
         const backoffTime = attempt * 2000; // 2s, 4s, 6s
@@ -115,8 +116,9 @@ Return ONLY valid JSON: { "author": "Full Author Name", "title": "Clean Book Tit
         await sleep(backoffTime);
         continue;
       }
-      
-      // Final attempt failed or non-retryable error
+
+      // Final attempt failed - gracefully degrade to heuristics
+      // We don't throw errors here; Claude is optional
       log.warn(`⚠️  Claude normalization failed (${status}): ${err?.message || 'Unknown error'} - using heuristics`);
       return null;
     }

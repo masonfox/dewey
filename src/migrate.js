@@ -4,17 +4,10 @@ import { normalizeViaClaude } from './claude.js';
 import { heuristicsFromName, sanitizeSegment, isAudio } from './utils.js';
 import { JobType } from './job.js';
 import { SOURCE_DIR, DEST_DIR, FILE_MODE, DIR_MODE, PUID, PGID } from './config.js';
+import { SkipError } from './errors.js';
 
-/**
- * Custom error class for skipped migrations (not actual errors)
- */
-export class SkipError extends Error {
-  constructor(message, reason = 'skip') {
-    super(message);
-    this.name = 'SkipError';
-    this.reason = reason;
-  }
-}
+// Re-export SkipError for backward compatibility
+export { SkipError } from './errors.js';
 
 // Returns canonical, normalized author and title for migration
 function getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle, log }) {
