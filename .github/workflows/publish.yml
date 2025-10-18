@@ -29,11 +29,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Debug migration functionality
-        run: npm run debug:migration
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-
       - name: Run tests
         run: bun test --env-file=/dev/null
         env:

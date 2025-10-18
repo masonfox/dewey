@@ -21,27 +21,21 @@ import { Job, JobType, JobState } from '../src/job.js';
 // Check if we have an API key for integration tests
 const hasApiKey = () => {
   const key = process.env.ANTHROPIC_API_KEY;
-  const hasKey = key && key.trim() !== '' && key.startsWith('sk-ant-');
-  console.log(`[hasApiKey] ANTHROPIC_API_KEY present: ${!!key}, starts with sk-ant: ${key?.startsWith('sk-ant-')}, hasKey: ${hasKey}`);
-  return hasKey;
+  return key && key.trim() !== '' && key.startsWith('sk-ant-');
 };
 
 // Simple mock logger that tracks calls without using mock()
 const createMockLog = () => ({
   debug: (...args) => { 
-    console.log('[DEBUG]', ...args);
     mockLog._calls.debug.push(args); 
   },
   info: (...args) => { 
-    console.log('[INFO]', ...args);
     mockLog._calls.info.push(args); 
   },
   warn: (...args) => { 
-    console.log('[WARN]', ...args);
     mockLog._calls.warn.push(args); 
   },
   error: (...args) => { 
-    console.log('[ERROR]', ...args);
     mockLog._calls.error.push(args); 
   },
   _calls: { debug: [], info: [], warn: [], error: [] },
@@ -81,19 +75,8 @@ beforeAll(async () => {
   process.env.DIR_MODE = '775';
 
   // Import migration module after env vars are set
-  console.log(`[IMPORT DEBUG] About to import migrate.js from: ${new URL('../src/migrate.js', import.meta.url).pathname}`);
-  
-  // Force fresh import by clearing any cached modules and adding timestamp
-  const migratePath = '../src/migrate.js?t=' + Date.now();
-  console.log(`[IMPORT DEBUG] Importing with cache bust: ${migratePath}`);
-  
-  const migrateModule = await import(migratePath);
-  console.log(`[IMPORT DEBUG] Import successful. migrateModule keys:`, Object.keys(migrateModule));
-  console.log(`[IMPORT DEBUG] migrateJob type:`, typeof migrateModule.migrateJob);
-  console.log(`[IMPORT DEBUG] migrateJob function:`, migrateModule.migrateJob.toString().slice(0, 200) + '...');
-  
+  const migrateModule = await import('../src/migrate.js');
   migrateJob = migrateModule.migrateJob;
-  console.log(`[IMPORT DEBUG] Assigned migrateJob, type:`, typeof migrateJob);
 });
 
 beforeEach(async () => {
@@ -133,39 +116,6 @@ describe('End-to-End Integration Tests', () => {
     const bookDir = path.join(authorDir, expectedTitle);
     const migratedFile = path.join(bookDir, expectedFilename);
 
-    // Debug: Show what we're looking for vs what exists
-    console.log(`[VERIFY] Looking for author dir: ${authorDir}`);
-    console.log(`[VERIFY] destDir exists: ${await fs.pathExists(destDir)}`);
-
-    if (await fs.pathExists(destDir)) {
-      const contents = await fs.readdir(destDir);
-      console.log(`[VERIFY] destDir contents: ${JSON.stringify(contents)}`);
-
-      for (const item of contents) {
-        const itemPath = path.join(destDir, item);
-        const isDir = (await fs.stat(itemPath)).isDirectory();
-        if (isDir) {
-          const subContents = await fs.readdir(itemPath);
-          console.log(`[VERIFY]   ${item}/ -> ${JSON.stringify(subContents)}`);
-        }
-      }
-    } else {
-      console.log(`[VERIFY] destDir does not exist!`);
-    }
-
-    // Additional debug: Check if directories exist with different names
-    if (!(await fs.pathExists(authorDir))) {
-      console.log(`[VERIFY] Expected author dir not found: ${expectedAuthor}`);
-      console.log(`[VERIFY] Actual contents of destDir:`, await fs.readdir(destDir).catch(() => []));
-    }
-    
-    if (!(await fs.pathExists(bookDir))) {
-      console.log(`[VERIFY] Expected book dir not found: ${expectedTitle}`);
-      if (await fs.pathExists(authorDir)) {
-        console.log(`[VERIFY] Actual contents of author dir:`, await fs.readdir(authorDir).catch(() => []));
-      }
-    }
-
     expect(await fs.pathExists(authorDir)).toBe(true);
     expect(await fs.pathExists(bookDir)).toBe(true);
     expect(await fs.pathExists(migratedFile)).toBe(true);
@@ -179,17 +129,6 @@ describe('End-to-End Integration Tests', () => {
 
     testIf('should migrate single audiobook file using Claude API', async () => {
       // Debug environment state
-      console.log(`[ENV DEBUG] testDir: ${testDir}`);
-      console.log(`[ENV DEBUG] sourceDir: ${sourceDir}`);
-      console.log(`[ENV DEBUG] destDir: ${destDir}`);
-      console.log(`[ENV DEBUG] process.env.SOURCE_DIR: ${process.env.SOURCE_DIR}`);
-      console.log(`[ENV DEBUG] process.env.DEST_DIR: ${process.env.DEST_DIR}`);
-
-      // Import and check config
-      const { DEST_DIR, SOURCE_DIR } = await import('../src/config.js');
-      console.log(`[ENV DEBUG] config.SOURCE_DIR(): ${SOURCE_DIR()}`);
-      console.log(`[ENV DEBUG] config.DEST_DIR(): ${DEST_DIR()}`);
-
       // Create a test file with a well-known book
       const filename = 'Stephen King - The Shining.m4b';
       const sourcePath = await createAudioFile(filename);
@@ -198,18 +137,10 @@ describe('End-to-End Integration Tests', () => {
       const job = new Job(sourcePath, JobType.FILE);
 
       // Migrate the file (migrateJob doesn't manage state, so we do it manually)
-      console.log(`[MIGRATION] Starting migration for job ${job.id}`);
-      console.log(`[MIGRATION] About to call migrateJob. Type: ${typeof migrateJob}`);
-      console.log(`[MIGRATION] migrateJob function signature: ${migrateJob.toString().slice(0, 100)}...`);
-      
       try {
         const result = await migrateJob(job, mockLog);
-        console.log(`[MIGRATION] Migration completed successfully with result:`, result);
         job.setState(JobState.COMPLETED);
       } catch (error) {
-        console.log(`[MIGRATION] Migration FAILED: ${error.message}`);
-        console.log(`[MIGRATION] Error stack: ${error.stack}`);
-        console.log(`[MIGRATION] Mock log calls:`, JSON.stringify(mockLog._calls, null, 2));
         job.setState(JobState.FAILED, error);
         throw error;
       }
@@ -305,13 +236,6 @@ describe('End-to-End Integration Tests', () => {
 
         expect(job.state).toBe(JobState.COMPLETED);
 
-        // Find what was actually created in destDir
-        const authors = await fs.readdir(destDir);
-        if (authors.length > 0) {
-          const titles = await fs.readdir(path.join(destDir, authors[0]));
-          console.log(`  Migrated to: ${authors[0]} / ${titles[0]} (expected: ${testCase.expectedAuthor} / ${testCase.expectedTitle})`);
-        }
-
         await verifyMigration(
           testCase.expectedAuthor,
           testCase.expectedTitle,
@@ -405,13 +329,6 @@ describe('End-to-End Integration Tests', () => {
 
       expect(job.state).toBe(JobState.COMPLETED);
 
-      // Check what was actually created
-      const authors = await fs.readdir(destDir);
-      if (authors.length > 0) {
-        const titles = await fs.readdir(path.join(destDir, authors[0]));
-        console.log(`  Migrated to: ${authors[0]} / ${titles[0]}`);
-      }
-
       // Claude might return "Some Random Audiobook" (title case normalization)
       // So we check for both possible outcomes
       const possibleDirs = [
@@ -447,9 +364,7 @@ describe('End-to-End Integration Tests', () => {
       try {
         await migrateJob(job, mockLog);
         job.setState(JobState.COMPLETED);
-        console.log('[ERROR TEST] Migration unexpectedly succeeded');
       } catch (error) {
-        console.log(`[ERROR TEST] Migration failed as expected: ${error.message}`);
         job.setState(JobState.FAILED, error);
       }
 
@@ -457,7 +372,6 @@ describe('End-to-End Integration Tests', () => {
       await fs.chmod(destDir, 0o755);
 
       // Job should be in failed state
-      console.log(`[ERROR TEST] Final job state: ${job.state}, error: ${job.error?.message || 'none'}`);
       expect(job.state).toBe(JobState.FAILED);
       expect(job.error).not.toBeNull();
 
