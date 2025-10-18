@@ -65,17 +65,36 @@ async function migrateJobFile(job, log) {
   const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, path.dirname(file))) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: path.parse(base).name, log });
   const bookDir = path.join(DEST_DIR(), author, title);
-  await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
-
-  // Copy the file with its original name - no renaming
-  const target = path.join(bookDir, base);
-  await fs.copy(file, target, { overwrite: true });
-  await applyPerms(bookDir);
-
-  await fs.remove(file);
-  log.info(`🎉 Migrated: "${base}" → "${author} / ${title}"` );
   
-  return { author, title, files: 1 };
+  try {
+    await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
+    log.debug(`📁 Created directory: ${bookDir}`);
+
+    // Copy the file with its original name - no renaming
+    const target = path.join(bookDir, base);
+    log.debug(`📋 Copying file from ${file} to ${target}`);
+    await fs.copy(file, target, { overwrite: true });
+    
+    // Verify the copy was successful
+    const sourceStats = await fs.stat(file);
+    const targetStats = await fs.stat(target);
+    
+    if (sourceStats.size !== targetStats.size) {
+      throw new Error(`File copy verification failed: size mismatch (source: ${sourceStats.size}, target: ${targetStats.size})`);
+    }
+    log.debug(`✅ File copy verified: ${sourceStats.size} bytes`);
+    
+    await applyPerms(bookDir);
+    
+    // Only remove source after successful copy and verification
+    await fs.remove(file);
+    log.info(`🎉 Migrated: "${base}" → "${author} / ${title}"` );
+    
+    return { author, title, files: 1 };
+  } catch (error) {
+    log.error(`❌ Migration failed for "${base}": ${error.message}`);
+    throw error;
+  }
 }
 
 /**
@@ -107,24 +126,43 @@ async function migrateJobDirectory(job, log) {
   const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, dir)) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: base, log });
   const bookDir = path.join(DEST_DIR(), author, title);
-  await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
+  
+  try {
+    await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
+    log.debug(`📁 Created directory: ${bookDir}`);
 
-  // Copy the audio files
-  for (const { src, name } of audioFiles) {
-    const target = path.join(bookDir, name);
-    await fs.copy(src, target, { overwrite: true });
-    copiedFiles++;
+    // Copy the audio files with verification
+    for (const { src, name } of audioFiles) {
+      const target = path.join(bookDir, name);
+      log.debug(`📋 Copying file from ${src} to ${target}`);
+      await fs.copy(src, target, { overwrite: true });
+      
+      // Verify each file copy
+      const sourceStats = await fs.stat(src);
+      const targetStats = await fs.stat(target);
+      
+      if (sourceStats.size !== targetStats.size) {
+        throw new Error(`File copy verification failed for "${name}": size mismatch (source: ${sourceStats.size}, target: ${targetStats.size})`);
+      }
+      log.debug(`✅ File copy verified: ${name} (${sourceStats.size} bytes)`);
+      copiedFiles++;
+    }
+
+    await applyPerms(bookDir);
+    
+    // Only remove source directory after all files are successfully copied and verified
+    await fs.remove(dir);
+    
+    // Clean up any empty parent directories that might have been left behind
+    await cleanupEmptyParentDirectories(dir, log);
+    
+    log.info(`🎉 Migrated directory: "${base}" → "${author} / ${title}" (${copiedFiles} files)`);
+    
+    return { author, title, files: copiedFiles };
+  } catch (error) {
+    log.error(`❌ Directory migration failed for "${base}": ${error.message}`);
+    throw error;
   }
-
-  await applyPerms(bookDir);
-  await fs.remove(dir);
-  
-  // Clean up any empty parent directories that might have been left behind
-  await cleanupEmptyParentDirectories(dir, log);
-  
-  log.info(`🎉 Migrated directory: "${base}" → "${author} / ${title}" (${copiedFiles} files)`);
-  
-  return { author, title, files: copiedFiles };
 }
 
 // Recursively discover all migration units (directories with audio or loose audio files)
@@ -283,17 +321,46 @@ async function migrateDir(dir, log) {
 }
 
 async function applyPerms(target) {
-  try { await fs.chown(target, PUID(), PGID()); } catch {}
-  try { await fs.chmod(target, DIR_MODE()); } catch {}
-  const names = await fs.readdir(target).catch(() => []);
-  for (const name of names) {
-    const p = path.join(target, name);
-    try {
-      const s = await fs.stat(p);
-      if (s.isDirectory()) await fs.chmod(p, DIR_MODE());
-      else await fs.chmod(p, FILE_MODE());
-      try { await fs.chown(p, PUID(), PGID()); } catch {}
-    } catch {}
+  try {
+    // Apply ownership and permissions to the directory
+    try { 
+      await fs.chown(target, PUID(), PGID()); 
+    } catch (chownError) {
+      // Ownership changes might fail in containers or restricted environments
+      // This is non-fatal, so we continue
+    }
+    
+    try { 
+      await fs.chmod(target, parseInt(DIR_MODE(), 8)); 
+    } catch (chmodError) {
+      // Permission changes might fail in restricted environments
+      // This is non-fatal, so we continue
+    }
+    
+    // Apply permissions to all files in the directory
+    const names = await fs.readdir(target).catch(() => []);
+    for (const name of names) {
+      const p = path.join(target, name);
+      try {
+        const s = await fs.stat(p);
+        if (s.isDirectory()) {
+          await fs.chmod(p, parseInt(DIR_MODE(), 8));
+        } else {
+          await fs.chmod(p, parseInt(FILE_MODE(), 8));
+        }
+        try { 
+          await fs.chown(p, PUID(), PGID()); 
+        } catch (chownError) {
+          // Ownership changes might fail, but this is non-fatal
+        }
+      } catch (statError) {
+        // File might have been deleted or is inaccessible, skip it
+      }
+    }
+  } catch (error) {
+    // Don't let permission failures break the migration
+    // but log them for debugging
+    console.warn(`Warning: Failed to apply permissions to ${target}: ${error.message}`);
   }
 }
 

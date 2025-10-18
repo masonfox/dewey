@@ -130,6 +130,19 @@ describe('End-to-End Integration Tests', () => {
       console.log(`[VERIFY] destDir does not exist!`);
     }
 
+    // Additional debug: Check if directories exist with different names
+    if (!(await fs.pathExists(authorDir))) {
+      console.log(`[VERIFY] Expected author dir not found: ${expectedAuthor}`);
+      console.log(`[VERIFY] Actual contents of destDir:`, await fs.readdir(destDir).catch(() => []));
+    }
+    
+    if (!(await fs.pathExists(bookDir))) {
+      console.log(`[VERIFY] Expected book dir not found: ${expectedTitle}`);
+      if (await fs.pathExists(authorDir)) {
+        console.log(`[VERIFY] Actual contents of author dir:`, await fs.readdir(authorDir).catch(() => []));
+      }
+    }
+
     expect(await fs.pathExists(authorDir)).toBe(true);
     expect(await fs.pathExists(bookDir)).toBe(true);
     expect(await fs.pathExists(migratedFile)).toBe(true);
@@ -170,6 +183,7 @@ describe('End-to-End Integration Tests', () => {
       } catch (error) {
         console.log(`[MIGRATION] Migration FAILED: ${error.message}`);
         console.log(`[MIGRATION] Error stack: ${error.stack}`);
+        console.log(`[MIGRATION] Mock log calls:`, JSON.stringify(mockLog._calls, null, 2));
         job.setState(JobState.FAILED, error);
         throw error;
       }
@@ -407,7 +421,9 @@ describe('End-to-End Integration Tests', () => {
       try {
         await migrateJob(job, mockLog);
         job.setState(JobState.COMPLETED);
+        console.log('[ERROR TEST] Migration unexpectedly succeeded');
       } catch (error) {
+        console.log(`[ERROR TEST] Migration failed as expected: ${error.message}`);
         job.setState(JobState.FAILED, error);
       }
 
@@ -415,6 +431,7 @@ describe('End-to-End Integration Tests', () => {
       await fs.chmod(destDir, 0o755);
 
       // Job should be in failed state
+      console.log(`[ERROR TEST] Final job state: ${job.state}, error: ${job.error?.message || 'none'}`);
       expect(job.state).toBe(JobState.FAILED);
       expect(job.error).not.toBeNull();
 
