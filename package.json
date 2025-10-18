@@ -10,7 +10,8 @@
   "scripts": {
     "start": "bun run src/index.js",
     "dev": "bun run src/index.js",
-    "test": "bun test"
+    "test": "bun test",
+    "debug:migration": "node debug-migration.js"
   },
   "dependencies": {
     "axios": "^1.7.5",

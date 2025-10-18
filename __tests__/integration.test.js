@@ -28,10 +28,22 @@ const hasApiKey = () => {
 
 // Simple mock logger that tracks calls without using mock()
 const createMockLog = () => ({
-  debug: (...args) => { mockLog._calls.debug.push(args); },
-  info: (...args) => { mockLog._calls.info.push(args); },
-  warn: (...args) => { mockLog._calls.warn.push(args); },
-  error: (...args) => { mockLog._calls.error.push(args); },
+  debug: (...args) => { 
+    console.log('[DEBUG]', ...args);
+    mockLog._calls.debug.push(args); 
+  },
+  info: (...args) => { 
+    console.log('[INFO]', ...args);
+    mockLog._calls.info.push(args); 
+  },
+  warn: (...args) => { 
+    console.log('[WARN]', ...args);
+    mockLog._calls.warn.push(args); 
+  },
+  error: (...args) => { 
+    console.log('[ERROR]', ...args);
+    mockLog._calls.error.push(args); 
+  },
   _calls: { debug: [], info: [], warn: [], error: [] },
   _reset() {
     this._calls.debug = [];

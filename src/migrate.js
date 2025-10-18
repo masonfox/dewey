@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'fs-extra';
+import { promises as fsPromises } from 'node:fs';
 import { normalizeViaClaude } from './claude.js';
 import { heuristicsFromName, sanitizeSegment, isAudio } from './utils.js';
 import { JobType } from './job.js';
@@ -61,28 +62,82 @@ async function migrateJobFile(job, log) {
     throw new Error(`Skipping non-audio file: "${base}"`);
   }
 
+  log.info(`🚀 Starting file migration: ${file}`);
+  
+  // Verify source file exists and get stats
+  if (!(await fs.pathExists(file))) {
+    throw new Error(`Source file does not exist: ${file}`);
+  }
+  
+  const sourceStats = await fs.stat(file);
+  log.info(`📊 Source file size: ${sourceStats.size} bytes`);
+
   const heuristics = heuristicsFromName(base, path.dirname(file));
   const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, path.dirname(file))) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: path.parse(base).name, log });
-  const bookDir = path.join(DEST_DIR(), author, title);
+  
+  const destDirRoot = DEST_DIR();
+  const bookDir = path.join(destDirRoot, author, title);
+  const target = path.join(bookDir, base);
+  
+  log.info(`📁 Target directory: ${bookDir}`);
+  log.info(`📋 Target file: ${target}`);
   
   try {
+    // Check if destination root exists and is writable
+    if (!(await fs.pathExists(destDirRoot))) {
+      throw new Error(`Destination root directory does not exist: ${destDirRoot}`);
+    }
+    
+    const destRootStats = await fs.stat(destDirRoot);
+    log.info(`📊 Dest root stats - mode: ${destRootStats.mode.toString(8)}, uid: ${destRootStats.uid}, gid: ${destRootStats.gid}`);
+    
+    // Try to create a test file to verify write permissions
+    const testFile = path.join(destDirRoot, '.write-test-' + Date.now());
+    try {
+      await fs.writeFile(testFile, 'test');
+      await fs.remove(testFile);
+      log.info(`✅ Write permission verified for ${destDirRoot}`);
+    } catch (writeTestError) {
+      throw new Error(`Cannot write to destination directory ${destDirRoot}: ${writeTestError.message}`);
+    }
+    
+    // Create the book directory
+    log.info(`📁 Creating directory: ${bookDir}`);
     await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
-    log.debug(`📁 Created directory: ${bookDir}`);
+    
+    // Verify directory was created
+    if (!(await fs.pathExists(bookDir))) {
+      throw new Error(`Failed to create directory: ${bookDir}`);
+    }
+    log.info(`✅ Directory created successfully: ${bookDir}`);
 
     // Copy the file with its original name - no renaming
-    const target = path.join(bookDir, base);
-    log.debug(`📋 Copying file from ${file} to ${target}`);
-    await fs.copy(file, target, { overwrite: true });
+    log.info(`📋 Copying file from ${file} to ${target}`);
+    
+    // Try using Node.js built-in copyFile which might be more reliable in CI
+    try {
+      await fsPromises.copyFile(file, target);
+    } catch (copyError) {
+      log.error(`❌ Native copyFile failed: ${copyError.message}, trying fs-extra...`);
+      await fs.copy(file, target, { overwrite: true });
+    }
+    
+    // Small delay to ensure file system operations complete
+    await new Promise(resolve => setTimeout(resolve, 10));
     
     // Verify the copy was successful
-    const sourceStats = await fs.stat(file);
+    if (!(await fs.pathExists(target))) {
+      throw new Error(`Target file was not created: ${target}`);
+    }
+    
     const targetStats = await fs.stat(target);
+    log.info(`📊 Target file size: ${targetStats.size} bytes`);
     
     if (sourceStats.size !== targetStats.size) {
       throw new Error(`File copy verification failed: size mismatch (source: ${sourceStats.size}, target: ${targetStats.size})`);
     }
-    log.debug(`✅ File copy verified: ${sourceStats.size} bytes`);
+    log.info(`✅ File copy verified: ${sourceStats.size} bytes`);
     
     await applyPerms(bookDir);
     
@@ -93,6 +148,21 @@ async function migrateJobFile(job, log) {
     return { author, title, files: 1 };
   } catch (error) {
     log.error(`❌ Migration failed for "${base}": ${error.message}`);
+    log.error(`❌ Error stack: ${error.stack}`);
+    
+    // Additional debugging info
+    try {
+      const uid = typeof process.getuid === 'function' ? process.getuid() : 'unknown';
+      const gid = typeof process.getgid === 'function' ? process.getgid() : 'unknown';
+      log.error(`📊 Current process - uid: ${uid}, gid: ${gid}`);
+      log.error(`📊 Source exists: ${await fs.pathExists(file)}`);
+      log.error(`📊 Dest root exists: ${await fs.pathExists(destDirRoot)}`);
+      log.error(`📊 Book dir exists: ${await fs.pathExists(bookDir)}`);
+      log.error(`📊 Target exists: ${await fs.pathExists(target)}`);
+    } catch (debugError) {
+      log.error(`❌ Failed to gather debug info: ${debugError.message}`);
+    }
+    
     throw error;
   }
 }
@@ -103,6 +173,8 @@ async function migrateJobFile(job, log) {
 async function migrateJobDirectory(job, log) {
   const dir = job.sourcePath;
   const base = job.displayName;
+
+  log.info(`🚀 Starting directory migration: ${dir}`);
 
   // Copy only audio files from this directory (non-recursive)
   const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -117,6 +189,8 @@ async function migrateJobDirectory(job, log) {
     audioFiles.push({ src, name: e.name });
   }
 
+  log.info(`📊 Found ${audioFiles.length} audio files in directory`);
+
   // If this directory has no audio files, don't process it as a book
   if (audioFiles.length === 0) {
     throw new SkipError(`Skipping directory with no audio files: "${base}"`, 'no-audio-files');
@@ -125,26 +199,60 @@ async function migrateJobDirectory(job, log) {
   const heuristics = heuristicsFromName(base, null);
   const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, dir)) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: base, log });
-  const bookDir = path.join(DEST_DIR(), author, title);
+  
+  const destDirRoot = DEST_DIR();
+  const bookDir = path.join(destDirRoot, author, title);
+  
+  log.info(`📁 Target directory: ${bookDir}`);
   
   try {
+    // Check destination permissions
+    if (!(await fs.pathExists(destDirRoot))) {
+      throw new Error(`Destination root directory does not exist: ${destDirRoot}`);
+    }
+    
+    const destRootStats = await fs.stat(destDirRoot);
+    log.info(`📊 Dest root stats - mode: ${destRootStats.mode.toString(8)}, uid: ${destRootStats.uid}, gid: ${destRootStats.gid}`);
+    
+    // Create the book directory
+    log.info(`📁 Creating directory: ${bookDir}`);
     await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
-    log.debug(`📁 Created directory: ${bookDir}`);
+    
+    // Verify directory was created
+    if (!(await fs.pathExists(bookDir))) {
+      throw new Error(`Failed to create directory: ${bookDir}`);
+    }
+    log.info(`✅ Directory created successfully: ${bookDir}`);
 
     // Copy the audio files with verification
     for (const { src, name } of audioFiles) {
       const target = path.join(bookDir, name);
-      log.debug(`📋 Copying file from ${src} to ${target}`);
-      await fs.copy(src, target, { overwrite: true });
+      log.info(`📋 Copying file from ${src} to ${target}`);
+      
+      const sourceStats = await fs.stat(src);
+      
+      // Try using Node.js built-in copyFile which might be more reliable in CI
+      try {
+        await fsPromises.copyFile(src, target);
+      } catch (copyError) {
+        log.error(`❌ Native copyFile failed for ${name}: ${copyError.message}, trying fs-extra...`);
+        await fs.copy(src, target, { overwrite: true });
+      }
+      
+      // Small delay to ensure file system operations complete
+      await new Promise(resolve => setTimeout(resolve, 10));
       
       // Verify each file copy
-      const sourceStats = await fs.stat(src);
+      if (!(await fs.pathExists(target))) {
+        throw new Error(`Target file was not created: ${target}`);
+      }
+      
       const targetStats = await fs.stat(target);
       
       if (sourceStats.size !== targetStats.size) {
         throw new Error(`File copy verification failed for "${name}": size mismatch (source: ${sourceStats.size}, target: ${targetStats.size})`);
       }
-      log.debug(`✅ File copy verified: ${name} (${sourceStats.size} bytes)`);
+      log.info(`✅ File copy verified: ${name} (${sourceStats.size} bytes)`);
       copiedFiles++;
     }
 
@@ -161,6 +269,20 @@ async function migrateJobDirectory(job, log) {
     return { author, title, files: copiedFiles };
   } catch (error) {
     log.error(`❌ Directory migration failed for "${base}": ${error.message}`);
+    log.error(`❌ Error stack: ${error.stack}`);
+    
+    // Additional debugging info
+    try {
+      const uid = typeof process.getuid === 'function' ? process.getuid() : 'unknown';
+      const gid = typeof process.getgid === 'function' ? process.getgid() : 'unknown';
+      log.error(`📊 Current process - uid: ${uid}, gid: ${gid}`);
+      log.error(`📊 Source dir exists: ${await fs.pathExists(dir)}`);
+      log.error(`📊 Dest root exists: ${await fs.pathExists(destDirRoot)}`);
+      log.error(`📊 Book dir exists: ${await fs.pathExists(bookDir)}`);
+    } catch (debugError) {
+      log.error(`❌ Failed to gather debug info: ${debugError.message}`);
+    }
+    
     throw error;
   }
 }
