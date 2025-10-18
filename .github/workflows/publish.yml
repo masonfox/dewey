@@ -35,6 +35,11 @@ jobs:
           # Set API key from GitHub secrets if available (optional - tests will skip if not set)
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}      
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
