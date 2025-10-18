@@ -81,8 +81,19 @@ beforeAll(async () => {
   process.env.DIR_MODE = '775';
 
   // Import migration module after env vars are set
-  const migrateModule = await import('../src/migrate.js');
+  console.log(`[IMPORT DEBUG] About to import migrate.js from: ${new URL('../src/migrate.js', import.meta.url).pathname}`);
+  
+  // Force fresh import by clearing any cached modules and adding timestamp
+  const migratePath = '../src/migrate.js?t=' + Date.now();
+  console.log(`[IMPORT DEBUG] Importing with cache bust: ${migratePath}`);
+  
+  const migrateModule = await import(migratePath);
+  console.log(`[IMPORT DEBUG] Import successful. migrateModule keys:`, Object.keys(migrateModule));
+  console.log(`[IMPORT DEBUG] migrateJob type:`, typeof migrateModule.migrateJob);
+  console.log(`[IMPORT DEBUG] migrateJob function:`, migrateModule.migrateJob.toString().slice(0, 200) + '...');
+  
   migrateJob = migrateModule.migrateJob;
+  console.log(`[IMPORT DEBUG] Assigned migrateJob, type:`, typeof migrateJob);
 });
 
 beforeEach(async () => {
@@ -188,9 +199,12 @@ describe('End-to-End Integration Tests', () => {
 
       // Migrate the file (migrateJob doesn't manage state, so we do it manually)
       console.log(`[MIGRATION] Starting migration for job ${job.id}`);
+      console.log(`[MIGRATION] About to call migrateJob. Type: ${typeof migrateJob}`);
+      console.log(`[MIGRATION] migrateJob function signature: ${migrateJob.toString().slice(0, 100)}...`);
+      
       try {
-        await migrateJob(job, mockLog);
-        console.log(`[MIGRATION] Migration completed successfully`);
+        const result = await migrateJob(job, mockLog);
+        console.log(`[MIGRATION] Migration completed successfully with result:`, result);
         job.setState(JobState.COMPLETED);
       } catch (error) {
         console.log(`[MIGRATION] Migration FAILED: ${error.message}`);
