@@ -124,7 +124,7 @@ async function migrateJobFile(job, log) {
     if (!(await fs.pathExists(bookDir))) {
       throw new Error(`Failed to create directory: ${bookDir}`);
     }
-    log.info(`✅ Directory created successfully: ${bookDir}`);
+    log.info(`📂 Directory created successfully: ${bookDir}`);
 
     // Copy the file with its original name - no renaming
     log.debug(`📋 Copying file from ${file} to ${target}`);
@@ -236,7 +236,7 @@ async function migrateJobDirectory(job, log) {
     if (!(await fs.pathExists(bookDir))) {
       throw new Error(`Failed to create directory: ${bookDir}`);
     }
-    log.info(`✅ Directory created successfully: ${bookDir}`);
+    log.info(`📂 Directory created successfully: ${bookDir}`);
 
     // Copy the audio files with verification
     for (const { src, name } of audioFiles) {
