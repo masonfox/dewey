@@ -28,16 +28,16 @@ docker run -d --name dewey \
 
 ```bash
 # Install dependencies
-yarn install
+bun install
 
 # Set environment variables
 cp .env.example .env
 
 # Run the application
-yarn start
+bun start
 
 # Run tests
-yarn test
+bun test
 ```
 
 Drop `.mp3`/`.m4b` files or directories into the `incoming/` directory. Dewey will automatically detect and migrate them to your organized library.

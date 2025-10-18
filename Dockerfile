@@ -18,8 +18,8 @@ ENV SOURCE_DIR=/data/incoming \
 
 WORKDIR /app
 
-COPY package*.json yarn.lock* ./
-RUN yarn install --production --frozen-lockfile
+COPY package.json bun.lockb* ./
+RUN corepack enable && corepack prepare bun@1.1.0 --activate && bun install --production --frozen-lockfile
 
 COPY src ./src
 

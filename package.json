@@ -6,11 +6,11 @@
   "author": "Mason Fox <masonfox22@gmail.com>",
   "type": "module",
   "main": "src/index.js",
+  "packageManager": "bun@1.1.0",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node src/index.js",
-    "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
-    "test:watch": "NODE_OPTIONS='--experimental-vm-modules' jest --watch"
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest"
   },
   "dependencies": {
     "axios": "^1.7.5",

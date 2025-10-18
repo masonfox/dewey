@@ -1,5 +1,18 @@
-import { jest } from '@jest/globals';
-import { describe, test, expect, beforeEach, afterEach, beforeAll } from '@jest/globals';
+// Import test utilities - compatible with both Bun and Jest
+let describe, test, expect, beforeEach, afterEach, beforeAll, mock, jest;
+let isBunTest = false;
+try {
+  // Try Bun's test runner first
+  ({ describe, test, expect, beforeEach, afterEach, beforeAll, mock } = await import('bun:test'));
+  isBunTest = true;
+} catch {
+  // Fall back to Jest
+  ({ jest } = await import('@jest/globals'));
+  ({ describe, test, expect, beforeEach, afterEach, beforeAll } = await import('@jest/globals'));
+  // Use Jest's fn() as mock
+  mock = jest.fn;
+}
+
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -7,20 +20,30 @@ import { JobQueue } from '../src/jobQueue.js';
 import { Job, JobState, JobType } from '../src/job.js';
 
 // Mock the migrate.js module
-const mockMigrateJob = jest.fn();
-const mockDiscoverMigrationUnits = jest.fn();
+const mockMigrateJob = mock(() => Promise.resolve({ author: 'Test Author', title: 'Test Title', files: 1 }));
+const mockDiscoverMigrationUnits = mock(() => Promise.resolve([]));
 
-jest.unstable_mockModule('../src/migrate.js', () => ({
-  migrateJob: mockMigrateJob,
-  discoverMigrationUnits: mockDiscoverMigrationUnits
-}));
+// Mock the entire migrate module
+if (isBunTest && mock.module) {
+  // Bun's mock system
+  mock.module('../src/migrate.js', () => ({
+    migrateJob: mockMigrateJob,
+    discoverMigrationUnits: mockDiscoverMigrationUnits
+  }));
+} else if (jest?.unstable_mockModule) {
+  // Jest's unstable mock system
+  jest.unstable_mockModule('../src/migrate.js', () => ({
+    migrateJob: mockMigrateJob,
+    discoverMigrationUnits: mockDiscoverMigrationUnits
+  }));
+}
 
 // Mock logger
 const mockLogger = {
-  debug: jest.fn(),
-  info: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn()
+  debug: mock(() => {}),
+  info: mock(() => {}),
+  warn: mock(() => {}),
+  error: mock(() => {})
 };
 
 describe('JobQueue', () => {
@@ -48,13 +71,13 @@ describe('JobQueue', () => {
     jobQueue.setLogger(mockLogger);
 
     // Clear mocks
-    Object.values(mockLogger).forEach(fn => fn.mockClear());
-    mockMigrateJob.mockClear();
-    mockDiscoverMigrationUnits.mockClear();
-    
+    Object.values(mockLogger).forEach(fn => fn.mockClear?.() || fn.mock?.calls.splice(0));
+    mockMigrateJob.mockClear?.() || mockMigrateJob.mock?.calls.splice(0);
+    mockDiscoverMigrationUnits.mockClear?.() || mockDiscoverMigrationUnits.mock?.calls.splice(0);
+
     // Setup default mock implementations
-    mockMigrateJob.mockResolvedValue({ author: 'Test Author', title: 'Test Title', files: 1 });
-    mockDiscoverMigrationUnits.mockResolvedValue([]);
+    mockMigrateJob.mockImplementation?.(() => Promise.resolve({ author: 'Test Author', title: 'Test Title', files: 1 }));
+    mockDiscoverMigrationUnits.mockImplementation?.(() => Promise.resolve([]));
   });
 
   afterEach(async () => {
@@ -129,7 +152,8 @@ describe('JobQueue', () => {
         { type: 'file', path: path.join(incomingDir, 'book1.m4b') },
         { type: 'directory', path: path.join(incomingDir, 'book-dir') }
       ];
-      mockDiscoverMigrationUnits.mockResolvedValueOnce(mockUnits);
+      mockDiscoverMigrationUnits.mockImplementationOnce?.(() => Promise.resolve(mockUnits)) ||
+        (mockDiscoverMigrationUnits.mockResolvedValueOnce?.(mockUnits));
 
       await jobQueue.enqueue(incomingDir);
 
@@ -207,7 +231,8 @@ describe('JobQueue', () => {
       await fs.writeFile(testFile, 'fake audio');
 
       // Mock migration to fail
-      mockMigrateJob.mockRejectedValueOnce(new Error('Migration failed'));
+      mockMigrateJob.mockImplementationOnce?.(() => Promise.reject(new Error('Migration failed'))) ||
+        (mockMigrateJob.mockRejectedValueOnce?.(new Error('Migration failed')));
 
       await jobQueue.enqueue(testFile);
       
