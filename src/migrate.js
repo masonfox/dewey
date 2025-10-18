@@ -118,6 +118,9 @@ async function migrateJobFile(job, log) {
     
     // Create the book directory
     log.info(`📁 Creating directory: ${bookDir}`);
+    if (process.env.CI) {
+      console.log(`[CI MIGRATE] About to create directory: ${bookDir}`);
+    }
     await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
     
     // Verify directory was created
@@ -125,16 +128,31 @@ async function migrateJobFile(job, log) {
       throw new Error(`Failed to create directory: ${bookDir}`);
     }
     log.info(`✅ Directory created successfully: ${bookDir}`);
+    if (process.env.CI) {
+      console.log(`[CI MIGRATE] Directory created successfully: ${bookDir}`);
+    }
 
     // Copy the file with its original name - no renaming
     log.info(`📋 Copying file from ${file} to ${target}`);
+    if (process.env.CI) {
+      console.log(`[CI MIGRATE] About to copy file from ${file} to ${target}`);
+    }
     
     // Try using Node.js built-in copyFile which might be more reliable in CI
     try {
       await fsPromises.copyFile(file, target);
+      if (process.env.CI) {
+        console.log(`[CI MIGRATE] Native copyFile completed`);
+      }
     } catch (copyError) {
       log.error(`❌ Native copyFile failed: ${copyError.message}, trying fs-extra...`);
+      if (process.env.CI) {
+        console.log(`[CI MIGRATE] Native copyFile failed, trying fs-extra: ${copyError.message}`);
+      }
       await fs.copy(file, target, { overwrite: true });
+      if (process.env.CI) {
+        console.log(`[CI MIGRATE] fs-extra copy completed`);
+      }
     }
     
     // Small delay to ensure file system operations complete
@@ -143,6 +161,9 @@ async function migrateJobFile(job, log) {
     // Verify the copy was successful
     if (!(await fs.pathExists(target))) {
       throw new Error(`Target file was not created: ${target}`);
+    }
+    if (process.env.CI) {
+      console.log(`[CI MIGRATE] File copy verified: ${target}`);
     }
     
     const targetStats = await fs.stat(target);
@@ -158,6 +179,13 @@ async function migrateJobFile(job, log) {
     // Only remove source after successful copy and verification
     await fs.remove(file);
     log.info(`🎉 Migrated: "${base}" → "${author} / ${title}"` );
+    
+    if (process.env.CI) {
+      console.log(`[CI MIGRATE] Migration completed successfully. Checking final state...`);
+      console.log(`[CI MIGRATE] Target file exists: ${await fs.pathExists(target)}`);
+      console.log(`[CI MIGRATE] Book dir exists: ${await fs.pathExists(bookDir)}`);
+      console.log(`[CI MIGRATE] Dest root contents: ${JSON.stringify(await fs.readdir(destDirRoot))}`);
+    }
     
     return { author, title, files: 1 };
   } catch (error) {

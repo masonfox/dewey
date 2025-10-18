@@ -146,7 +146,9 @@ describe('End-to-End Integration Tests', () => {
     const testIf = hasApiKey() ? test : test.skip;
 
     testIf('should migrate single audiobook file using Claude API', async () => {
-      // Debug environment state
+      if (process.env.CI) {
+        console.log(`[CI TEST] Starting single audiobook test - Stephen King`);
+      }
       // Create a test file with a well-known book
       const filename = 'Stephen King - The Shining.m4b';
       const sourcePath = await createAudioFile(filename);
