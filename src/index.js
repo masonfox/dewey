@@ -105,8 +105,12 @@ const server = http.createServer((req, res) => {
   }
 });
 
-server.listen(8080, 'localhost', () => {
-  log.info('🏥 Health check server listening on /health');
+// Wait for server to start before initializing watcher
+await new Promise((resolve) => {
+  server.listen(8080, 'localhost', () => {
+    log.info('🏥 Health check server listening on /health');
+    resolve();
+  });
 });
 
 log.info(`📁 Watching: ${SOURCE_DIR()}`);
