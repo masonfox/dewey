@@ -25,6 +25,8 @@ describe('Configuration Validation', () => {
     process.env.FILE_MODE = '664';
     process.env.DIR_MODE = '775';
     process.env.ANTHROPIC_API_URL = 'https://api.anthropic.com';
+    // Explicitly remove API key to test warning
+    delete process.env.ANTHROPIC_API_KEY;
 
     // Need to reimport to pick up new env vars
     const config = await import('../src/config.js?t=' + Date.now());
