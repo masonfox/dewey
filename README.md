@@ -1,5 +1,7 @@
 ## Dewey Audiobook Migrator
 
+[![codecov](https://codecov.io/gh/masonfox/dewey/graph/badge.svg?token=5CR300GF1F)](https://codecov.io/gh/masonfox/dewey)
+
 Node-based containerized watcher that organizes incoming audiobook files into a canonical library structure using Claude AI for intelligent author/title normalization.
 
 ### Features
