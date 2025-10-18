@@ -10,7 +10,25 @@ import path from 'node:path';
 import http from 'node:http';
 import { JobQueue } from './jobQueue.js';
 import { validateClaude } from './claude.js';
-import { LOG_FILE, LOG_LEVEL, SOURCE_DIR, DEST_DIR, DIRECTORY_STABILITY_TIMEOUT } from './config.js';
+import { LOG_FILE, LOG_LEVEL, SOURCE_DIR, DEST_DIR, DIRECTORY_STABILITY_TIMEOUT, validateConfig } from './config.js';
+import { isFatal } from './errors.js';
+
+// Validate configuration early - fail fast if config is invalid
+try {
+  const warnings = validateConfig();
+  // We'll log warnings after the logger is set up
+  if (warnings.length > 0) {
+    // Store for later logging
+    globalThis.__configWarnings = warnings;
+  }
+} catch (error) {
+  if (isFatal(error)) {
+    console.error(`\n❌ Fatal Configuration Error:\n${error.message}\n`);
+    process.exit(1);
+  }
+  throw error;
+}
+
 await fs.ensureFile(LOG_FILE());
 
 const log = pino({
@@ -54,6 +72,14 @@ let appStatus = {
 };
 
 log.info(`🚀 Welcome! Starting Dewey, your intelligent audiobook migrator!`);
+
+// Log any configuration warnings
+if (globalThis.__configWarnings && globalThis.__configWarnings.length > 0) {
+  for (const warning of globalThis.__configWarnings) {
+    log.warn(`⚠️  ${warning}`);
+  }
+  delete globalThis.__configWarnings;
+}
 
 // Ensure source directory exists
 await fs.ensureDir(SOURCE_DIR());
