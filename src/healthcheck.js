@@ -5,11 +5,6 @@
  * Queries the application's actual status endpoint
  */
 
-import dotenv from 'dotenv';
-
-// Load environment variables from .env file FIRST
-dotenv.config();
-
 import http from 'node:http';
 
 const EXIT_SUCCESS = 0;
