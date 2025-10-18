@@ -3,11 +3,6 @@ name: Publish to GHCR
 on:
   push:
     branches: [ main, master ]
-    paths:
-      - 'Dockerfile'
-      - 'src/**'
-      - 'package.json'
-      - '.github/workflows/publish.yml'
   workflow_dispatch: {}
 
 permissions:
@@ -78,6 +73,12 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           provenance: false
           sbom: false
+
+      - name: Build Summary
+        run: |
+          echo "✅ Successfully built and pushed Docker image"
+          echo "📦 Tags: ${{ steps.meta.outputs.tags }}"
+          echo "🔗 Registry: ghcr.io/${{ github.repository }}"
 
 
 
