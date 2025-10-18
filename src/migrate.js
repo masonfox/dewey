@@ -42,12 +42,32 @@ export async function migratePath(p, log) {
  * Main entry point for migrating a job - works with the new Job system
  */
 export async function migrateJob(job, log) {
-  if (job.type === JobType.FILE) {
-    return await migrateJobFile(job, log);
-  } else if (job.type === JobType.DIRECTORY) {
-    return await migrateJobDirectory(job, log);
-  } else {
-    throw new Error(`Unsupported job type: ${job.type}`);
+  console.log(`🎬 [DIRECT] migrateJob called with job type: ${job.type}, id: ${job.id}, sourcePath: ${job.sourcePath}`);
+  log.info(`🎬 migrateJob called with job type: ${job.type}, id: ${job.id}, sourcePath: ${job.sourcePath}`);
+  
+  try {
+    let result;
+    if (job.type === JobType.FILE) {
+      console.log(`📄 [DIRECT] Calling migrateJobFile for ${job.id}`);
+      log.info(`📄 Calling migrateJobFile for ${job.id}`);
+      result = await migrateJobFile(job, log);
+    } else if (job.type === JobType.DIRECTORY) {
+      console.log(`📁 [DIRECT] Calling migrateJobDirectory for ${job.id}`);
+      log.info(`📁 Calling migrateJobDirectory for ${job.id}`);
+      result = await migrateJobDirectory(job, log);
+    } else {
+      throw new Error(`Unsupported job type: ${job.type}`);
+    }
+    
+    console.log(`✅ [DIRECT] migrateJob completed successfully for ${job.id}:`, result);
+    log.info(`✅ migrateJob completed successfully for ${job.id}:`, result);
+    return result;
+  } catch (error) {
+    console.log(`❌ [DIRECT] migrateJob failed for ${job.id}: ${error.message}`);
+    console.log(`❌ [DIRECT] Stack trace: ${error.stack}`);
+    log.error(`❌ migrateJob failed for ${job.id}: ${error.message}`);
+    log.error(`❌ Stack trace: ${error.stack}`);
+    throw error;
   }
 }
 
@@ -55,6 +75,7 @@ export async function migrateJob(job, log) {
  * Migrate a single file job
  */
 async function migrateJobFile(job, log) {
+  console.log(`🚀 [DIRECT] migrateJobFile starting for ${job.id}, source: ${job.sourcePath}`);
   const file = job.sourcePath;
   const base = job.displayName;
   
@@ -171,6 +192,7 @@ async function migrateJobFile(job, log) {
  * Migrate a directory job
  */
 async function migrateJobDirectory(job, log) {
+  console.log(`🚀 [DIRECT] migrateJobDirectory starting for ${job.id}, source: ${job.sourcePath}`);
   const dir = job.sourcePath;
   const base = job.displayName;
 

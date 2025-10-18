@@ -25,13 +25,29 @@ async function debugMigration() {
   console.log(`📤 Destination directory: ${destDir}`);
   
   try {
-    // Set up environment
+    // IMPORTANT: Clear any existing env vars first (just like the integration test)
+    delete process.env.SOURCE_DIR;
+    delete process.env.DEST_DIR;
+
+    // Set up environment exactly like the integration test
     process.env.SOURCE_DIR = sourceDir;
     process.env.DEST_DIR = destDir;
     process.env.PUID = '0';
     process.env.PGID = '0';
     process.env.FILE_MODE = '664';
     process.env.DIR_MODE = '775';
+    
+    // Import migration module AFTER env vars are set (like integration test does)
+    console.log('🔄 Importing migration module...');
+    const migrateModule = await import('./src/migrate.js');
+    const { migrateJob } = migrateModule;
+    console.log('✅ Migration module imported successfully');
+    
+    // Import config to verify it's reading the correct paths
+    const configModule = await import('./src/config.js');
+    const { DEST_DIR, SOURCE_DIR } = configModule;
+    console.log(`📊 Config SOURCE_DIR(): ${SOURCE_DIR()}`);
+    console.log(`📊 Config DEST_DIR(): ${DEST_DIR()}`);
     
     // Create directories
     await fs.ensureDir(sourceDir);
