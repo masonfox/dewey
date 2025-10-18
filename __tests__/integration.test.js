@@ -80,12 +80,6 @@ beforeAll(async () => {
   // Import migration module after env vars are set
   const migrateModule = await import('../src/migrate.js');
   migrateJob = migrateModule.migrateJob;
-  
-  // Debug CI environment issues
-  if (process.env.CI) {
-    console.log(`[CI DEBUG] migrateJob type: ${typeof migrateJob}`);
-    console.log(`[CI DEBUG] Module keys: ${Object.keys(migrateModule)}`);
-  }
 });
 
 beforeEach(async () => {
@@ -125,15 +119,6 @@ describe('End-to-End Integration Tests', () => {
     const bookDir = path.join(authorDir, expectedTitle);
     const migratedFile = path.join(bookDir, expectedFilename);
 
-    if (process.env.CI) {
-      console.log(`[CI DEBUG] Looking for author dir: ${authorDir}`);
-      console.log(`[CI DEBUG] destDir exists: ${await fs.pathExists(destDir)}`);
-      if (await fs.pathExists(destDir)) {
-        const contents = await fs.readdir(destDir);
-        console.log(`[CI DEBUG] destDir contents: ${JSON.stringify(contents)}`);
-      }
-    }
-
     expect(await fs.pathExists(authorDir)).toBe(true);
     expect(await fs.pathExists(bookDir)).toBe(true);
     expect(await fs.pathExists(migratedFile)).toBe(true);
@@ -146,9 +131,6 @@ describe('End-to-End Integration Tests', () => {
     const testIf = hasApiKey() ? test : test.skip;
 
     testIf('should migrate single audiobook file using Claude API', async () => {
-      if (process.env.CI) {
-        console.log(`[CI TEST] Starting single audiobook test - Stephen King`);
-      }
       // Create a test file with a well-known book
       const filename = 'Stephen King - The Shining.m4b';
       const sourcePath = await createAudioFile(filename);
@@ -157,19 +139,10 @@ describe('End-to-End Integration Tests', () => {
       const job = new Job(sourcePath, JobType.FILE);
 
       // Migrate the file (migrateJob doesn't manage state, so we do it manually)
-      if (process.env.CI) {
-        console.log(`[CI DEBUG] About to call migrateJob for job ${job.id}, type: ${typeof migrateJob}`);
-      }
       try {
         const result = await migrateJob(job, mockLog);
-        if (process.env.CI) {
-          console.log(`[CI DEBUG] Migration completed with result:`, result);
-        }
         job.setState(JobState.COMPLETED);
       } catch (error) {
-        if (process.env.CI) {
-          console.log(`[CI DEBUG] Migration failed:`, error.message);
-        }
         job.setState(JobState.FAILED, error);
         throw error;
       }
