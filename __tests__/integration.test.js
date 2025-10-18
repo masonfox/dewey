@@ -53,6 +53,11 @@ beforeAll(async () => {
   sourceDir = path.join(testDir, 'incoming');
   destDir = path.join(testDir, 'library');
 
+  // IMPORTANT: Clear any existing env vars from .env file first
+  // This ensures test-specific paths take precedence
+  delete process.env.SOURCE_DIR;
+  delete process.env.DEST_DIR;
+
   // Set environment variables before importing
   process.env.SOURCE_DIR = sourceDir;
   process.env.DEST_DIR = destDir;
