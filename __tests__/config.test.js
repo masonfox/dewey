@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { ConfigError } from '../src/errors.js';
 
 describe('Configuration Validation', () => {

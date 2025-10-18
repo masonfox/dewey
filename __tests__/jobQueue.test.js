@@ -1,17 +1,4 @@
-// Import test utilities - compatible with both Bun and Jest
-let describe, test, expect, beforeEach, afterEach, beforeAll, mock, jest;
-let isBunTest = false;
-try {
-  // Try Bun's test runner first
-  ({ describe, test, expect, beforeEach, afterEach, beforeAll, mock } = await import('bun:test'));
-  isBunTest = true;
-} catch {
-  // Fall back to Jest
-  ({ jest } = await import('@jest/globals'));
-  ({ describe, test, expect, beforeEach, afterEach, beforeAll } = await import('@jest/globals'));
-  // Use Jest's fn() as mock
-  mock = jest.fn;
-}
+import { describe, test, expect, beforeEach, afterEach, beforeAll, mock } from 'bun:test';
 
 import fs from 'fs-extra';
 import path from 'path';
@@ -19,24 +6,14 @@ import os from 'os';
 import { JobQueue } from '../src/jobQueue.js';
 import { Job, JobState, JobType } from '../src/job.js';
 
-// Mock the migrate.js module
+// Mock the migrate.js module with Bun's mock system
 const mockMigrateJob = mock(() => Promise.resolve({ author: 'Test Author', title: 'Test Title', files: 1 }));
 const mockDiscoverMigrationUnits = mock(() => Promise.resolve([]));
 
-// Mock the entire migrate module
-if (isBunTest && mock.module) {
-  // Bun's mock system
-  mock.module('../src/migrate.js', () => ({
-    migrateJob: mockMigrateJob,
-    discoverMigrationUnits: mockDiscoverMigrationUnits
-  }));
-} else if (jest?.unstable_mockModule) {
-  // Jest's unstable mock system
-  jest.unstable_mockModule('../src/migrate.js', () => ({
-    migrateJob: mockMigrateJob,
-    discoverMigrationUnits: mockDiscoverMigrationUnits
-  }));
-}
+mock.module('../src/migrate.js', () => ({
+  migrateJob: mockMigrateJob,
+  discoverMigrationUnits: mockDiscoverMigrationUnits
+}));
 
 // Mock logger
 const mockLogger = {
@@ -71,9 +48,9 @@ describe('JobQueue', () => {
     jobQueue.setLogger(mockLogger);
 
     // Clear mocks
-    Object.values(mockLogger).forEach(fn => fn.mockClear?.() || fn.mock?.calls.splice(0));
-    mockMigrateJob.mockClear?.() || mockMigrateJob.mock?.calls.splice(0);
-    mockDiscoverMigrationUnits.mockClear?.() || mockDiscoverMigrationUnits.mock?.calls.splice(0);
+    Object.values(mockLogger).forEach(fn => fn.mockClear());
+    mockMigrateJob.mockClear();
+    mockDiscoverMigrationUnits.mockClear();
 
     // Setup default mock implementations
     mockMigrateJob.mockImplementation?.(() => Promise.resolve({ author: 'Test Author', title: 'Test Title', files: 1 }));

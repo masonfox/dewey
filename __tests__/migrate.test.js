@@ -1,15 +1,4 @@
-// Import test utilities - compatible with both Bun and Jest
-let describe, test, expect, beforeEach, afterEach, beforeAll, afterAll, mock, jest;
-try {
-  // Try Bun's test runner first
-  ({ describe, test, expect, beforeEach, afterEach, beforeAll, afterAll, mock } = await import('bun:test'));
-} catch {
-  // Fall back to Jest
-  ({ jest } = await import('@jest/globals'));
-  ({ describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } = await import('@jest/globals'));
-  // Use Jest's fn() as mock
-  mock = jest.fn;
-}
+import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll, mock } from 'bun:test';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -59,15 +48,15 @@ beforeEach(async () => {
   if (await fs.pathExists(destDir)) {
     await fs.remove(destDir);
   }
-  
+
   await fs.ensureDir(sourceDir);
   await fs.ensureDir(destDir);
-  
-  // Clear mock calls
-  mockLog.debug.mockClear?.() || mockLog.debug.mock?.calls.splice(0);
-  mockLog.info.mockClear?.() || mockLog.info.mock?.calls.splice(0);
-  mockLog.warn.mockClear?.() || mockLog.warn.mock?.calls.splice(0);
-  mockLog.error.mockClear?.() || mockLog.error.mock?.calls.splice(0);
+
+  // Clear mock logger calls
+  mockLog.debug.mockClear();
+  mockLog.info.mockClear();
+  mockLog.warn.mockClear();
+  mockLog.error.mockClear();
 });
 
 afterEach(async () => {

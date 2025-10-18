@@ -1,5 +1,4 @@
-import { jest } from '@jest/globals';
-import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -7,10 +6,10 @@ import { Job, JobState, JobType } from '../src/job.js';
 
 // Mock logger for testing
 const mockLogger = {
-  debug: jest.fn(),
-  info: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn()
+  debug: mock(() => {}),
+  info: mock(() => {}),
+  warn: mock(() => {}),
+  error: mock(() => {})
 };
 
 describe('Job', () => {

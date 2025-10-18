@@ -19,14 +19,5 @@
     "pino": "^9.3.1",
     "pino-pretty": "^11.2.2"
   },
-  "devDependencies": {
-    "@jest/globals": "^30.2.0",
-    "jest": "^30.2.0"
-  },
-  "jest": {
-    "testEnvironment": "node",
-    "transform": {},
-    "testMatch": ["**/__tests__/**/*.test.js"],
-    "verbose": true
-  }
+  "devDependencies": {}
 }
