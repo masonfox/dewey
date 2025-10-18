@@ -41,9 +41,9 @@ describe('Job', () => {
   describe('constructor', () => {
     test('should create a job with basic properties', () => {
       const job = new Job(testFile);
-      
+
       expect(job.id).toBeDefined();
-      expect(job.id).toHaveLength(6);
+      expect(job.id).toHaveLength(8);  // Updated to 8 characters
       expect(job.sourcePath).toBe(path.resolve(testFile));
       expect(job.type).toBe(JobType.FILE);
       expect(job.state).toBe(JobState.PENDING);
@@ -69,8 +69,29 @@ describe('Job', () => {
     test('should generate consistent IDs for same path', () => {
       const job1 = new Job(testFile);
       const job2 = new Job(testFile);
-      
+
       expect(job1.id).toBe(job2.id);
+    });
+
+    test('should prevent collisions for files with same basename in different directories', async () => {
+      // Create two directories with files that have the same basename
+      const dir1 = path.join(testDir, 'author1');
+      const dir2 = path.join(testDir, 'author2');
+      await fs.ensureDir(dir1);
+      await fs.ensureDir(dir2);
+
+      const file1 = path.join(dir1, 'same-filename.m4b');
+      const file2 = path.join(dir2, 'same-filename.m4b');
+
+      await fs.writeFile(file1, 'content1');
+      await fs.writeFile(file2, 'content2');
+
+      const job1 = new Job(file1);
+      const job2 = new Job(file2);
+
+      // IDs should be different even though the basenames are the same
+      expect(job1.id).not.toBe(job2.id);
+      expect(job1.displayName).toBe(job2.displayName); // But display names are the same
     });
   });
 

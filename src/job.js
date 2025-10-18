@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'fs-extra';
+import crypto from 'node:crypto';
 
 /**
  * Job states representing the lifecycle of a migration job
@@ -45,12 +46,20 @@ export class Job {
   }
 
   /**
-   * Generate a short, readable job ID based on the source name
+   * Generate a short, readable job ID based on the full source path
+   * Uses SHA-256 hash to prevent collisions for files with same basename
    */
-  generateJobId(sourceName) {
-    const base = path.basename(sourceName);
-    // Take first 6 characters of base64 encoded hash for short, readable ID
-    const hash = Buffer.from(base).toString('base64').replace(/[+/=]/g, '').slice(0, 6);
+  generateJobId(sourcePath) {
+    // Use full resolved path to ensure uniqueness even for files with same basename
+    const resolvedPath = path.resolve(sourcePath);
+
+    // Use SHA-256 for better collision resistance
+    const hash = crypto
+      .createHash('sha256')
+      .update(resolvedPath)
+      .digest('base64url')  // Use base64url encoding (URL-safe, no padding)
+      .slice(0, 8);  // 8 characters provides good collision resistance
+
     return hash.toUpperCase();
   }
 

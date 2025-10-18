@@ -506,24 +506,28 @@ describe('JobQueue', () => {
         expect(job.type).toBe(JobType.DIRECTORY);
         expect(job.displayName).toBe('incoming');
         expect(job.sourcePath).toBe(incomingBookDir);
-        
-        // Will have the same job ID as "incoming" since ID is based on basename
-        // But that's OK - the key is that it's NOT in the root source directory
-        expect(job.id).toBe('AW5JB2'); // Same ID, but different source path
+
+        // Job ID is now based on full path, not basename
+        // So this will have a different ID than the root "incoming" directory
+        expect(job.id).toBeDefined();
         expect(job.sourcePath).not.toBe(sourceDir); // Different source path
       });
 
-      test('should verify AW5JB2 job ID generation is deterministic for "incoming"', () => {
-        // This verifies that the job ID "AW5JB2" is indeed generated from "incoming"
-        // This helps us understand why the bug was reproducible
-        
-        const incomingJob = new Job('/some/path/incoming', JobType.DIRECTORY);
-        
-        // The job ID should be deterministically generated from the basename
-        expect(incomingJob.id).toBe('AW5JB2');
-        expect(incomingJob.displayName).toBe('incoming');
-        
-        // This confirms our understanding of why we kept seeing this specific job ID
+      test('should verify job ID generation is deterministic and path-based', () => {
+        // Job IDs are now based on the full path, not just the basename
+        // This prevents collisions for files/directories with the same name in different locations
+
+        const incomingJob1 = new Job('/some/path/incoming', JobType.DIRECTORY);
+        const incomingJob2 = new Job('/other/path/incoming', JobType.DIRECTORY);
+
+        // Different paths should generate different IDs
+        expect(incomingJob1.id).not.toBe(incomingJob2.id);
+        expect(incomingJob1.displayName).toBe('incoming');
+        expect(incomingJob2.displayName).toBe('incoming');
+
+        // Same path should generate same ID
+        const incomingJob3 = new Job('/some/path/incoming', JobType.DIRECTORY);
+        expect(incomingJob1.id).toBe(incomingJob3.id);
       });
     });
   });
