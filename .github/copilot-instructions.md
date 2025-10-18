@@ -1,1 +1,0 @@
-Use "yarn" to manage dependencies and run scripts.
