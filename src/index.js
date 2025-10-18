@@ -1,7 +1,5 @@
-import dotenv from 'dotenv';
-
-// Load environment variables from .env file FIRST
-dotenv.config();
+// Bun automatically loads .env files, so no need for dotenv package
+// If running with Node, you'll need to manually load: node --env-file=.env src/index.js
 
 import chokidar from 'chokidar';
 import pino from 'pino';
