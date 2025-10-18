@@ -1,5 +1,6 @@
 ## Dewey Audiobook Migrator
 
+[![GHCR Package](https://img.shields.io/badge/ghcr-dewey-blue?logo=docker)](https://github.com/masonfox/dewey/pkgs/container/dewey)
 [![codecov](https://codecov.io/gh/masonfox/dewey/graph/badge.svg?token=5CR300GF1F)](https://codecov.io/gh/masonfox/dewey)
 
 Node-based containerized watcher that organizes incoming audiobook files into a canonical library structure using Claude AI for intelligent author/title normalization.
