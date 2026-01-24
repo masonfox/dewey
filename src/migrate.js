@@ -6,6 +6,7 @@ import { heuristicsFromName, sanitizeSegment, isAudio } from './utils.js';
 import { JobType } from './job.js';
 import { SOURCE_DIR, DEST_DIR, FILE_MODE, DIR_MODE, PUID, PGID } from './config.js';
 import { SkipError } from './errors.js';
+import { extractAudioMetadata, extractDirectoryMetadata } from './metadata.js';
 
 // Re-export SkipError for backward compatibility
 export { SkipError } from './errors.js';
@@ -86,8 +87,16 @@ async function migrateJobFile(job, log) {
   const sourceStats = await fs.stat(file);
   log.debug(`📊 Source file size: ${sourceStats.size} bytes`);
 
+  // Extract metadata from audio file
+  const fileMetadata = await extractAudioMetadata(file, log);
+  if (fileMetadata?.hasMetadata) {
+    log.info(`🎵 File metadata: Author: "${fileMetadata.author || 'N/A'}", Title: "${fileMetadata.title || 'N/A'}", Year: "${fileMetadata.year || 'N/A'}"`);
+  } else {
+    log.debug(`🔍 No embedded metadata found, using heuristics`);
+  }
+
   const heuristics = heuristicsFromName(base, path.dirname(file));
-  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, path.dirname(file))) || {};
+  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, path.dirname(file), fileMetadata)) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: path.parse(base).name, log });
   
   const destDirRoot = DEST_DIR();
@@ -210,8 +219,16 @@ async function migrateJobDirectory(job, log) {
     throw new SkipError(`Skipping directory with no audio files: "${base}"`, 'no-audio-files');
   }
 
+  // Extract metadata from directory (prefers .m4b files)
+  const dirMetadata = await extractDirectoryMetadata(dir, log);
+  if (dirMetadata?.hasMetadata) {
+    log.info(`🎵 Directory metadata: Author: "${dirMetadata.author || 'N/A'}", Title: "${dirMetadata.title || 'N/A'}", Year: "${dirMetadata.year || 'N/A'}"`);
+  } else {
+    log.debug(`🔍 No embedded metadata found, using heuristics`);
+  }
+
   const heuristics = heuristicsFromName(base, null);
-  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, dir)) || {};
+  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, dir, dirMetadata)) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: base, log });
   
   const destDirRoot = DEST_DIR();

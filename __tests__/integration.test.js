@@ -11,7 +11,7 @@
  * Tests are skipped if API key is not available.
  */
 
-import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'bun:test';
+import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'vitest';
 
 import fs from 'fs-extra';
 import path from 'path';
@@ -332,11 +332,11 @@ describe('End-to-End Integration Tests', () => {
       expect(job.state).toBe(JobState.COMPLETED);
 
       // Claude might return "Some Random Audiobook" (title case normalization)
-      // So we check for both possible outcomes
+      // sanitizeSegment replaces underscores with spaces, so we check for those outcomes
       const possibleDirs = [
-        { author: 'Unknown', title: 'some_random_audiobook' },
+        { author: 'Unknown', title: 'some random audiobook' },
         { author: 'Unknown', title: 'Some Random Audiobook' },
-        { author: 'Unknown', title: 'Some_Random_Audiobook' }
+        { author: 'Unknown', title: 'Some random audiobook' }
       ];
 
       let found = false;
@@ -363,8 +363,16 @@ describe('End-to-End Integration Tests', () => {
 
       const job = new Job(sourcePath, JobType.FILE);
 
+      // Create a silent logger for this expected-failure test to avoid confusing CI logs
+      const silentLog = {
+        debug: () => {},
+        info: () => {},
+        warn: () => {},
+        error: () => {}
+      };
+
       try {
-        await migrateJob(job, mockLog);
+        await migrateJob(job, silentLog);
         job.setState(JobState.COMPLETED);
       } catch (error) {
         job.setState(JobState.FAILED, error);

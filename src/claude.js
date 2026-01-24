@@ -44,17 +44,28 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export async function normalizeViaClaude(name, fallbackAuthor, fallbackTitle, log, parentDir = null) {
+export async function normalizeViaClaude(name, fallbackAuthor, fallbackTitle, log, parentDir = null, fileMetadata = null) {
   const API_KEY = getCleanApiKey();
   if (!API_KEY) {
     log.warn('⚠️  Claude API key not set; using heuristics.');
     return null;
   }
   
+  // Build metadata section if available
+  let metadataSection = '';
+  if (fileMetadata?.hasMetadata) {
+    metadataSection = '\nEMBEDDED METADATA (from audio file tags):\n';
+    if (fileMetadata.title) metadataSection += `- Title: "${fileMetadata.title}"\n`;
+    if (fileMetadata.author) metadataSection += `- Author: "${fileMetadata.author}"\n`;
+    if (fileMetadata.year) metadataSection += `- Year: "${fileMetadata.year}"\n`;
+    if (fileMetadata.genre) metadataSection += `- Genre: "${fileMetadata.genre}"\n`;
+    metadataSection += '\nThe embedded metadata above is extracted from the audio file\'s tags and is authoritative.\nUse it as the primary source for author and title. The year and genre provide additional\ncontext for disambiguation.\n';
+  }
+  
   const prompt = `You are an expert audiobook librarian helping organize a digital library. Extract author and title from the filename/path below.
 
 CONTEXT: This is for the Dewey audiobook organizer that creates "[Author]/[Book Title]" directory structures. The file may be from a series, multi-part book, or have complex naming patterns.
-
+${metadataSection}
 GUIDELINES:
 - Author should be the primary author's full name (e.g., "Stephen King", not "King, Stephen")
 - Title should be the main book title without series info, part numbers, or file extensions
@@ -63,8 +74,9 @@ GUIDELINES:
 - For multi-part files: Use the main title, ignore part numbers (001, 002, etc.)
 - Handle common patterns: "Author - Title", "Title by Author", "Series Book# - Title"
 - If uncertain, prefer keeping full descriptive titles over truncating
+${fileMetadata?.hasMetadata ? '- Clean up the author name (format as "First Last"), normalize the title (proper capitalization, remove technical artifacts)' : ''}
 
-INPUT: ${name}
+FILENAME: ${name}
 ${parentDir ? `PARENT_DIR: ${path.basename(parentDir)}` : ''}
 
 Return ONLY valid JSON: { "author": "Full Author Name", "title": "Clean Book Title" }`;

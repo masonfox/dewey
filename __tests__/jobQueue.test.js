@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach, beforeAll, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
 
 import fs from 'fs-extra';
 import path from 'path';
@@ -6,21 +6,21 @@ import os from 'os';
 import { JobQueue } from '../src/jobQueue.js';
 import { Job, JobState, JobType } from '../src/job.js';
 
-// Mock the migrate.js module with Bun's mock system
-const mockMigrateJob = mock(() => Promise.resolve({ author: 'Test Author', title: 'Test Title', files: 1 }));
-const mockDiscoverMigrationUnits = mock(() => Promise.resolve([]));
-
-mock.module('../src/migrate.js', () => ({
-  migrateJob: mockMigrateJob,
-  discoverMigrationUnits: mockDiscoverMigrationUnits
+// Mock the migrate.js module with Vitest's mock system
+vi.mock('../src/migrate.js', () => ({
+  migrateJob: vi.fn(() => Promise.resolve({ author: 'Test Author', title: 'Test Title', files: 1 })),
+  discoverMigrationUnits: vi.fn(() => Promise.resolve([]))
 }));
+
+// Import mocked functions after vi.mock
+import { migrateJob as mockMigrateJob, discoverMigrationUnits as mockDiscoverMigrationUnits } from '../src/migrate.js';
 
 // Mock logger
 const mockLogger = {
-  debug: mock(() => {}),
-  info: mock(() => {}),
-  warn: mock(() => {}),
-  error: mock(() => {})
+  debug: vi.fn(() => {}),
+  info: vi.fn(() => {}),
+  warn: vi.fn(() => {}),
+  error: vi.fn(() => {})
 };
 
 describe('JobQueue', () => {
@@ -29,8 +29,7 @@ describe('JobQueue', () => {
   let jobQueue;
 
   beforeAll(async () => {
-    // Import the mocked module
-    await import('../src/migrate.js');
+    // Module is already mocked via vi.mock
   });
 
   beforeEach(async () => {
@@ -53,8 +52,8 @@ describe('JobQueue', () => {
     mockDiscoverMigrationUnits.mockClear();
 
     // Setup default mock implementations
-    mockMigrateJob.mockImplementation?.(() => Promise.resolve({ author: 'Test Author', title: 'Test Title', files: 1 }));
-    mockDiscoverMigrationUnits.mockImplementation?.(() => Promise.resolve([]));
+    mockMigrateJob.mockImplementation(() => Promise.resolve({ author: 'Test Author', title: 'Test Title', files: 1 }));
+    mockDiscoverMigrationUnits.mockImplementation(() => Promise.resolve([]));
   });
 
   afterEach(async () => {
@@ -129,8 +128,7 @@ describe('JobQueue', () => {
         { type: 'file', path: path.join(incomingDir, 'book1.m4b') },
         { type: 'directory', path: path.join(incomingDir, 'book-dir') }
       ];
-      mockDiscoverMigrationUnits.mockImplementationOnce?.(() => Promise.resolve(mockUnits)) ||
-        (mockDiscoverMigrationUnits.mockResolvedValueOnce?.(mockUnits));
+      mockDiscoverMigrationUnits.mockImplementationOnce(() => Promise.resolve(mockUnits));
 
       await jobQueue.enqueue(incomingDir);
 
@@ -208,8 +206,7 @@ describe('JobQueue', () => {
       await fs.writeFile(testFile, 'fake audio');
 
       // Mock migration to fail
-      mockMigrateJob.mockImplementationOnce?.(() => Promise.reject(new Error('Migration failed'))) ||
-        (mockMigrateJob.mockRejectedValueOnce?.(new Error('Migration failed')));
+      mockMigrateJob.mockRejectedValueOnce(new Error('Migration failed'));
 
       await jobQueue.enqueue(testFile);
       
