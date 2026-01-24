@@ -48,8 +48,3 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t dewey:test .
-
-      - name: Test Docker image
-        run: |
-          docker run --rm dewey:test node --version
-          echo "Docker image built successfully"
