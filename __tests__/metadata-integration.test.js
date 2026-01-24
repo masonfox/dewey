@@ -10,6 +10,19 @@ const hasApiKey = () => {
   return key && key.trim() !== '' && key.startsWith('sk-ant-');
 };
 
+// Check if test audio files exist (for local testing)
+const hasTestFiles = async () => {
+  try {
+    await fs.access('/home/mason/Downloads/01 Angels and Demons.m4b');
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// Cache the file existence check
+let testFilesExist = null;
+
 // Mock logger
 const mockLog = {
   info: () => {},
@@ -19,12 +32,23 @@ const mockLog = {
 };
 
 describe('metadata-claude integration', () => {
-  // Skip all tests if no API key
+  // Skip all tests if no API key or test files
   if (!hasApiKey()) {
     console.log('⚠️  Skipping Claude API integration tests (no ANTHROPIC_API_KEY)');
   }
 
-  const testIf = hasApiKey() ? test : test.skip;
+  // Check for test files on first run
+  beforeEach(async () => {
+    if (testFilesExist === null) {
+      testFilesExist = await hasTestFiles();
+      if (!testFilesExist && hasApiKey()) {
+        console.log('⚠️  Test audio files not found in /home/mason/Downloads/ - some tests will be skipped');
+      }
+    }
+  });
+
+  const testIf = hasApiKey() && testFilesExist ? test : test.skip;
+  const testIfApiOnly = hasApiKey() ? test : test.skip;
 
   describe('Claude normalization with embedded metadata', () => {
     testIf('should pass metadata to Claude for enhanced normalization', async () => {
@@ -91,7 +115,7 @@ describe('metadata-claude integration', () => {
       expect(result.author).toBe('R. F. Kuang');
     });
 
-    testIf('should work without metadata (backward compatibility)', async () => {
+    testIfApiOnly('should work without metadata (backward compatibility)', async () => {
       // Test that Claude still works when no metadata is provided
       const result = await normalizeViaClaude(
         'Stephen King - The Stand.mp3',
@@ -128,7 +152,7 @@ describe('metadata-claude integration', () => {
       expect(result.title).toBe('Angels and Demons');
     });
 
-    testIf('should handle partial metadata gracefully', async () => {
+    testIfApiOnly('should handle partial metadata gracefully', async () => {
       // Create mock partial metadata
       const partialMetadata = {
         title: 'Some Book',
@@ -233,7 +257,7 @@ describe('metadata-claude integration', () => {
   });
 
   describe('Error handling in integrated flow', () => {
-    testIf('should handle metadata extraction failure gracefully', async () => {
+    testIfApiOnly('should handle metadata extraction failure gracefully', async () => {
       // Try to extract from non-existent file
       const fileMetadata = await extractAudioMetadata('/nonexistent/file.m4b', mockLog);
       
@@ -259,7 +283,7 @@ describe('metadata-claude integration', () => {
       // The test is just verifying we handle null metadata gracefully
     });
 
-    testIf('should handle Claude normalization with invalid metadata gracefully', async () => {
+    testIfApiOnly('should handle Claude normalization with invalid metadata gracefully', async () => {
       // Create invalid metadata
       const invalidMetadata = {
         title: '',

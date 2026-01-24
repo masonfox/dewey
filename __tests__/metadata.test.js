@@ -1,8 +1,10 @@
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { extractAudioMetadata, extractDirectoryMetadata } from '../src/metadata.js';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as childProcess from 'node:child_process';
+import { promisify } from 'node:util';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,6 +28,105 @@ function createMockLogger() {
     calls
   };
 }
+
+// Mock ffprobe responses for different test files
+const mockFfprobeResponses = {
+  '/home/mason/Downloads/01 Angels and Demons.m4b': {
+    format: {
+      tags: {
+        title: 'Angels and Demons',
+        artist: 'Dan Brown',
+        date: '2004',
+        genre: 'Thriller'
+      }
+    }
+  },
+  '/home/mason/Downloads/R.F. Kuang - Katabasis.m4b': {
+    format: {
+      tags: {
+        title: 'Katabasis',
+        artist: 'R. F. Kuang',
+        date: '2025',
+        genre: 'Literature & Fiction'
+      }
+    }
+  },
+  '/home/mason/Downloads/Lodestar.mp3': {
+    format: {
+      tags: {
+        title: 'Lodestar',
+        artist: 'Shannon Messenger',
+        genre: 'Audio Book'
+      }
+    }
+  },
+  '/home/mason/Downloads/Neverseen.mp3': {
+    format: {
+      tags: {
+        title: 'Neverseen',
+        artist: 'Shannon Messenger'
+      }
+    }
+  },
+  '/home/mason/Downloads/Matt Dinniman - Dungeon Crawler Carl.m4b': {
+    format: {
+      tags: {
+        title: 'Dungeon Crawler Carl',
+        artist: 'Matt Dinniman',
+        date: '2021',
+        genre: 'Science Fiction & Fantasy'
+      }
+    }
+  }
+};
+
+// Mock execFile to simulate ffprobe
+vi.mock('node:child_process', async () => {
+  const actual = await vi.importActual('node:child_process');
+  return {
+    ...actual,
+    execFile: vi.fn((command, args, options, callback) => {
+      // Handle version check
+      if (args && args[0] === '-version') {
+        if (callback) {
+          callback(null, { stdout: 'ffprobe version 4.0', stderr: '' });
+        }
+        return;
+      }
+      
+      // Get the file path from args
+      const filePath = args && args[args.length - 1];
+      
+      // Check if we have a mock response for this file
+      if (mockFfprobeResponses[filePath]) {
+        const stdout = JSON.stringify(mockFfprobeResponses[filePath]);
+        if (callback) {
+          callback(null, { stdout, stderr: '' });
+        }
+      } else if (filePath === '' || !filePath || filePath === '/path/to/nonexistent.m4b') {
+        // Simulate file not found error (not ENOENT for ffprobe command, but for the file)
+        const error = new Error('No such file or directory');
+        error.code = 1; // Exit code from ffprobe
+        if (callback) {
+          callback(error);
+        }
+      } else if (filePath === '/etc/hosts') {
+        // Simulate invalid audio file
+        const error = new Error('Invalid data found when processing input');
+        error.code = 1;
+        if (callback) {
+          callback(error);
+        }
+      } else {
+        // Default: no metadata found
+        const stdout = JSON.stringify({ format: { tags: {} } });
+        if (callback) {
+          callback(null, { stdout, stderr: '' });
+        }
+      }
+    })
+  };
+});
 
 describe('metadata.js - Unit Tests', () => {
   describe('extractAudioMetadata', () => {
@@ -218,12 +319,16 @@ describe('metadata.js - Unit Tests', () => {
       test('should prefer M4B files over MP3 when both exist', async () => {
         const { log, calls } = createMockLogger();
         
-        // Copy test files to temp directory
-        const m4bSource = '/home/mason/Downloads/01 Angels and Demons.m4b';
-        const mp3Source = '/home/mason/Downloads/Lodestar.mp3';
+        // Create empty test files (metadata will be mocked)
+        const m4bPath = path.join(testDir, 'book.m4b');
+        const mp3Path = path.join(testDir, 'chapter1.mp3');
         
-        await fs.copyFile(m4bSource, path.join(testDir, 'book.m4b'));
-        await fs.copyFile(mp3Source, path.join(testDir, 'chapter1.mp3'));
+        await fs.writeFile(m4bPath, 'fake m4b content');
+        await fs.writeFile(mp3Path, 'fake mp3 content');
+        
+        // Add mock responses for these files
+        mockFfprobeResponses[m4bPath] = mockFfprobeResponses['/home/mason/Downloads/01 Angels and Demons.m4b'];
+        mockFfprobeResponses[mp3Path] = mockFfprobeResponses['/home/mason/Downloads/Lodestar.mp3'];
         
         const result = await extractDirectoryMetadata(testDir, log);
 
@@ -242,8 +347,11 @@ describe('metadata.js - Unit Tests', () => {
       test('should use MP3 files when no M4B available', async () => {
         const { log, calls } = createMockLogger();
         
-        const mp3Source = '/home/mason/Downloads/Lodestar.mp3';
-        await fs.copyFile(mp3Source, path.join(testDir, 'audiobook.mp3'));
+        const mp3Path = path.join(testDir, 'audiobook.mp3');
+        await fs.writeFile(mp3Path, 'fake mp3 content');
+        
+        // Add mock response
+        mockFfprobeResponses[mp3Path] = mockFfprobeResponses['/home/mason/Downloads/Lodestar.mp3'];
         
         const result = await extractDirectoryMetadata(testDir, log);
 
@@ -258,9 +366,15 @@ describe('metadata.js - Unit Tests', () => {
         const { log } = createMockLogger();
         
         // Create multiple M4B files
-        const m4bSource = '/home/mason/Downloads/01 Angels and Demons.m4b';
-        await fs.copyFile(m4bSource, path.join(testDir, 'z-last.m4b'));
-        await fs.copyFile(m4bSource, path.join(testDir, 'a-first.m4b'));
+        const firstPath = path.join(testDir, 'a-first.m4b');
+        const lastPath = path.join(testDir, 'z-last.m4b');
+        
+        await fs.writeFile(firstPath, 'fake m4b content');
+        await fs.writeFile(lastPath, 'fake m4b content');
+        
+        // Add mock responses
+        mockFfprobeResponses[firstPath] = mockFfprobeResponses['/home/mason/Downloads/01 Angels and Demons.m4b'];
+        mockFfprobeResponses[lastPath] = mockFfprobeResponses['/home/mason/Downloads/01 Angels and Demons.m4b'];
         
         const result = await extractDirectoryMetadata(testDir, log);
 
@@ -296,16 +410,16 @@ describe('metadata.js - Unit Tests', () => {
         // Create subdirectory with audio file
         const subdir = path.join(testDir, 'subfolder');
         await fs.mkdir(subdir);
-        await fs.copyFile(
-          '/home/mason/Downloads/Lodestar.mp3',
-          path.join(subdir, 'nested.mp3')
-        );
         
-        // Add audio file to main directory
-        await fs.copyFile(
-          '/home/mason/Downloads/01 Angels and Demons.m4b',
-          path.join(testDir, 'main.m4b')
-        );
+        const subdirFile = path.join(subdir, 'nested.mp3');
+        const mainFile = path.join(testDir, 'main.m4b');
+        
+        await fs.writeFile(subdirFile, 'fake mp3 content');
+        await fs.writeFile(mainFile, 'fake m4b content');
+        
+        // Add mock responses
+        mockFfprobeResponses[subdirFile] = mockFfprobeResponses['/home/mason/Downloads/Lodestar.mp3'];
+        mockFfprobeResponses[mainFile] = mockFfprobeResponses['/home/mason/Downloads/01 Angels and Demons.m4b'];
         
         const result = await extractDirectoryMetadata(testDir, log);
 
@@ -317,12 +431,14 @@ describe('metadata.js - Unit Tests', () => {
       test('should handle mixed audio and non-audio files', async () => {
         const { log } = createMockLogger();
         
+        const mp3Path = path.join(testDir, 'audiobook.mp3');
+        
         await fs.writeFile(path.join(testDir, 'readme.txt'), 'test');
-        await fs.copyFile(
-          '/home/mason/Downloads/Lodestar.mp3',
-          path.join(testDir, 'audiobook.mp3')
-        );
+        await fs.writeFile(mp3Path, 'fake mp3 content');
         await fs.writeFile(path.join(testDir, 'cover.jpg'), 'fake');
+        
+        // Add mock response
+        mockFfprobeResponses[mp3Path] = mockFfprobeResponses['/home/mason/Downloads/Lodestar.mp3'];
         
         const result = await extractDirectoryMetadata(testDir, log);
 
