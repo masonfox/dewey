@@ -2,6 +2,11 @@
 
 FROM oven/bun:1.3.0-slim AS base
 
+# Install ffmpeg for metadata extraction
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
 ENV SOURCE_DIR=/data/incoming \
     DEST_DIR=/data/library \
     LOG_FILE=/data/logs/migrations.log \
