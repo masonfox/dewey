@@ -363,8 +363,16 @@ describe('End-to-End Integration Tests', () => {
 
       const job = new Job(sourcePath, JobType.FILE);
 
+      // Create a silent logger for this expected-failure test to avoid confusing CI logs
+      const silentLog = {
+        debug: () => {},
+        info: () => {},
+        warn: () => {},
+        error: () => {}
+      };
+
       try {
-        await migrateJob(job, mockLog);
+        await migrateJob(job, silentLog);
         job.setState(JobState.COMPLETED);
       } catch (error) {
         job.setState(JobState.FAILED, error);
