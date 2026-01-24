@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -6,10 +6,10 @@ import { Job, JobState, JobType } from '../src/job.js';
 
 // Mock logger for testing
 const mockLogger = {
-  debug: mock(() => {}),
-  info: mock(() => {}),
-  warn: mock(() => {}),
-  error: mock(() => {})
+  debug: vi.fn(() => {}),
+  info: vi.fn(() => {}),
+  warn: vi.fn(() => {}),
+  error: vi.fn(() => {})
 };
 
 describe('Job', () => {

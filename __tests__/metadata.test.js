@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { extractAudioMetadata, extractDirectoryMetadata } from '../src/metadata.js';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';

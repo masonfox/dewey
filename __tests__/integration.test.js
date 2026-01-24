@@ -11,7 +11,7 @@
  * Tests are skipped if API key is not available.
  */
 
-import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'bun:test';
+import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'vitest';
 
 import fs from 'fs-extra';
 import path from 'path';

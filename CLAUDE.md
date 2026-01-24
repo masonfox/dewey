@@ -23,13 +23,19 @@ node src/index.js
 ### Testing
 ```bash
 # Run all tests
-bun test
+npm test
 
-# Run tests with Jest directly
-NODE_OPTIONS='--experimental-vm-modules' jest
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage
+npm run test:coverage
 
 # Run specific test file
-NODE_OPTIONS='--experimental-vm-modules' jest __tests__/jobQueue.test.js
+npm test __tests__/jobQueue.test.js
+
+# Run tests matching a pattern
+npm test -t "should migrate file job"
 ```
 
 ### Docker
