@@ -332,11 +332,11 @@ describe('End-to-End Integration Tests', () => {
       expect(job.state).toBe(JobState.COMPLETED);
 
       // Claude might return "Some Random Audiobook" (title case normalization)
-      // So we check for both possible outcomes
+      // sanitizeSegment replaces underscores with spaces, so we check for those outcomes
       const possibleDirs = [
-        { author: 'Unknown', title: 'some_random_audiobook' },
+        { author: 'Unknown', title: 'some random audiobook' },
         { author: 'Unknown', title: 'Some Random Audiobook' },
-        { author: 'Unknown', title: 'Some_Random_Audiobook' }
+        { author: 'Unknown', title: 'Some random audiobook' }
       ];
 
       let found = false;

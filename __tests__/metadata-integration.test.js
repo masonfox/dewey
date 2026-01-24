@@ -4,6 +4,12 @@ import path from 'node:path';
 import { normalizeViaClaude } from '../src/claude.js';
 import { extractAudioMetadata } from '../src/metadata.js';
 
+// Check if we have an API key for integration tests
+const hasApiKey = () => {
+  const key = process.env.ANTHROPIC_API_KEY;
+  return key && key.trim() !== '' && key.startsWith('sk-ant-');
+};
+
 // Mock logger
 const mockLog = {
   info: () => {},
@@ -13,8 +19,15 @@ const mockLog = {
 };
 
 describe('metadata-claude integration', () => {
+  // Skip all tests if no API key
+  if (!hasApiKey()) {
+    console.log('⚠️  Skipping Claude API integration tests (no ANTHROPIC_API_KEY)');
+  }
+
+  const testIf = hasApiKey() ? test : test.skip;
+
   describe('Claude normalization with embedded metadata', () => {
-    test('should pass metadata to Claude for enhanced normalization', async () => {
+    testIf('should pass metadata to Claude for enhanced normalization', async () => {
       // Extract metadata from a real file
       const fileMetadata = await extractAudioMetadata('/home/mason/Downloads/01 Angels and Demons.m4b', mockLog);
       
@@ -39,7 +52,7 @@ describe('metadata-claude integration', () => {
       expect(result.title).toBe('Angels and Demons');
     });
 
-    test('should handle metadata with year for disambiguation', async () => {
+    testIf('should handle metadata with year for disambiguation', async () => {
       const fileMetadata = await extractAudioMetadata('/home/mason/Downloads/R.F. Kuang - Katabasis.m4b', mockLog);
       
       expect(fileMetadata).not.toBeNull();
@@ -59,7 +72,7 @@ describe('metadata-claude integration', () => {
       expect(result.title).toContain('Katabasis');
     });
 
-    test('should handle author name variations with metadata', async () => {
+    testIf('should handle author name variations with metadata', async () => {
       const fileMetadata = await extractAudioMetadata('/home/mason/Downloads/R.F. Kuang - Katabasis.m4b', mockLog);
       
       expect(fileMetadata.author).toBe('R. F. Kuang');
@@ -78,7 +91,7 @@ describe('metadata-claude integration', () => {
       expect(result.author).toBe('R. F. Kuang');
     });
 
-    test('should work without metadata (backward compatibility)', async () => {
+    testIf('should work without metadata (backward compatibility)', async () => {
       // Test that Claude still works when no metadata is provided
       const result = await normalizeViaClaude(
         'Stephen King - The Stand.mp3',
@@ -94,7 +107,7 @@ describe('metadata-claude integration', () => {
       expect(result.title).toBe('The Stand');
     });
 
-    test('should handle metadata with genre for context', async () => {
+    testIf('should handle metadata with genre for context', async () => {
       const fileMetadata = await extractAudioMetadata('/home/mason/Downloads/01 Angels and Demons.m4b', mockLog);
       
       expect(fileMetadata.genre).toBeTruthy();
@@ -115,7 +128,7 @@ describe('metadata-claude integration', () => {
       expect(result.title).toBe('Angels and Demons');
     });
 
-    test('should handle partial metadata gracefully', async () => {
+    testIf('should handle partial metadata gracefully', async () => {
       // Create mock partial metadata
       const partialMetadata = {
         title: 'Some Book',
@@ -147,7 +160,7 @@ describe('metadata-claude integration', () => {
   });
 
   describe('Metadata extraction consistency', () => {
-    test('should produce same metadata from same file repeatedly', async () => {
+    testIf('should produce same metadata from same file repeatedly', async () => {
       const results = [];
       
       for (let i = 0; i < 3; i++) {
@@ -160,7 +173,7 @@ describe('metadata-claude integration', () => {
       expect(results[1]).toEqual(results[2]);
     });
 
-    test('should extract different metadata from different files', async () => {
+    testIf('should extract different metadata from different files', async () => {
       const metadata1 = await extractAudioMetadata('/home/mason/Downloads/Lodestar.mp3', mockLog);
       const metadata2 = await extractAudioMetadata('/home/mason/Downloads/01 Angels and Demons.m4b', mockLog);
 
@@ -171,7 +184,7 @@ describe('metadata-claude integration', () => {
   });
 
   describe('End-to-end metadata flow', () => {
-    test('should extract, normalize, and verify full metadata pipeline', async () => {
+    testIf('should extract, normalize, and verify full metadata pipeline', async () => {
       // Step 1: Extract metadata from file
       const fileMetadata = await extractAudioMetadata('/home/mason/Downloads/01 Angels and Demons.m4b', mockLog);
       
@@ -199,7 +212,7 @@ describe('metadata-claude integration', () => {
       expect(normalized.title).not.toContain('01'); // No file prefixes
     });
 
-    test('should handle complex filename with metadata enrichment', async () => {
+    testIf('should handle complex filename with metadata enrichment', async () => {
       const fileMetadata = await extractAudioMetadata('/home/mason/Downloads/Matt Dinniman - Dungeon Crawler Carl.m4b', mockLog);
       
       expect(fileMetadata).not.toBeNull();
@@ -220,7 +233,7 @@ describe('metadata-claude integration', () => {
   });
 
   describe('Error handling in integrated flow', () => {
-    test('should handle metadata extraction failure gracefully', async () => {
+    testIf('should handle metadata extraction failure gracefully', async () => {
       // Try to extract from non-existent file
       const fileMetadata = await extractAudioMetadata('/nonexistent/file.m4b', mockLog);
       
@@ -246,7 +259,7 @@ describe('metadata-claude integration', () => {
       // The test is just verifying we handle null metadata gracefully
     });
 
-    test('should handle Claude normalization with invalid metadata gracefully', async () => {
+    testIf('should handle Claude normalization with invalid metadata gracefully', async () => {
       // Create invalid metadata
       const invalidMetadata = {
         title: '',
@@ -272,7 +285,7 @@ describe('metadata-claude integration', () => {
   });
 
   describe('Metadata quality improvements', () => {
-    test('should provide better results with metadata than without', async () => {
+    testIf('should provide better results with metadata than without', async () => {
       // Extract metadata
       const fileMetadata = await extractAudioMetadata('/home/mason/Downloads/01 Angels and Demons.m4b', mockLog);
       
