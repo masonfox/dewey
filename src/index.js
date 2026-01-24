@@ -1,6 +1,9 @@
 // Bun automatically loads .env files, so no need for dotenv package
 // If running with Node, you'll need to manually load: node --env-file=.env src/index.js
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import chokidar from 'chokidar';
 import pino from 'pino';
 import fs from 'fs-extra';
@@ -10,6 +13,12 @@ import { JobQueue } from './jobQueue.js';
 import { validateClaude } from './claude.js';
 import { LOG_FILE, LOG_LEVEL, SOURCE_DIR, DEST_DIR, DIRECTORY_STABILITY_TIMEOUT, validateConfig } from './config.js';
 import { isFatal } from './errors.js';
+
+// Read version from package.json
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJson = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf-8'));
+const VERSION = packageJson.version;
 
 // Validate configuration early - fail fast if config is invalid
 try {
@@ -69,7 +78,7 @@ let appStatus = {
   errors: []
 };
 
-log.info(`🚀 Welcome! Starting Dewey, your intelligent audiobook migrator!`);
+log.info(`🚀 Welcome! Starting Dewey (v${VERSION}), your intelligent audiobook migrator!`);
 
 // Log any configuration warnings
 if (globalThis.__configWarnings && globalThis.__configWarnings.length > 0) {
