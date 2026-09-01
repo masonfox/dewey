@@ -1,6 +1,6 @@
 {
   "name": "dewey",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Audiobook migrator with Claude normalization",
   "license": "MIT",
   "author": "Mason Fox <masonfox22@gmail.com>",

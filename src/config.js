@@ -16,7 +16,7 @@ export const LOG_LEVEL = () => process.env.LOG_LEVEL || 'info';
 
 // Claude AI configuration  
 export const ANTHROPIC_API_KEY = () => process.env.ANTHROPIC_API_KEY || '';
-export const CLAUDE_MODEL = () => process.env.CLAUDE_MODEL || 'claude-3-5-haiku-20241022';
+export const CLAUDE_MODEL = () => process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001';
 export const ANTHROPIC_API_URL = () => (process.env.ANTHROPIC_API_URL || 'https://api.anthropic.com').replace(/\/$/, '');
 
 // Processing behavior
