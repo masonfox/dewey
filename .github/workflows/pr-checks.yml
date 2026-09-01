@@ -25,6 +25,9 @@ jobs:
 
       - name: Run tests with coverage
         run: npm run test:coverage
+        env:
+          # Set API key from GitHub secrets if available (optional - tests will skip if not set)
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
