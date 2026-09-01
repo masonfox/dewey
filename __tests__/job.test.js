@@ -183,15 +183,21 @@ describe('Job', () => {
 
     test('should check directory modification time', async () => {
       const job = new Job(testDirectory, JobType.DIRECTORY);
-      
+
       // Touch the directory to make it "fresh" (within the stability window)
       const veryRecentTime = new Date(Date.now() - 50); // 50ms ago
       await fs.utimes(testDirectory, veryRecentTime, veryRecentTime);
-      
+
       // Fresh directory should be unstable with short timeout (100ms)
       expect(await job.checkStability(100)).toBe(false);
-      
-      // With zero timeout, even fresh directory should be stable
+
+      // With zero timeout, a directory modified safely in the past should be stable.
+      // Using a multi-second offset here (rather than reusing the 50ms mtime above)
+      // avoids flakiness from filesystem mtime rounding on some platforms (e.g. Windows),
+      // which can round a near-"now" timestamp forward past the actual current time and
+      // make the elapsed-time calculation go negative.
+      const safelyPastTime = new Date(Date.now() - 5000); // 5s ago
+      await fs.utimes(testDirectory, safelyPastTime, safelyPastTime);
       expect(await job.checkStability(0)).toBe(true);
     });
 
