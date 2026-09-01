@@ -367,7 +367,9 @@ describe('End-to-End Integration Tests', () => {
       }
 
       expect(found).toBe(true);
-    }, 10000);
+    }, 30000); // Unlike its sibling above, this test doesn't clear the API key, so it
+    // genuinely hits the live Claude API when one is available and needs the same
+    // generous timeout as the other live-API tests in this file, not vitest's 10s default.
   });
 
   describe('Error Handling', () => {
