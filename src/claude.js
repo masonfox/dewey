@@ -104,6 +104,10 @@ Return ONLY valid JSON: { "author": "Full Author Name", "title": "Clean Book Tit
         },
         timeout: 15000
       });
+      if (data?.stop_reason === 'refusal') {
+        log.warn('⚠️  Claude refused to normalize filename - using heuristics');
+        return null;
+      }
       const text = data?.content?.[0]?.text || '';
       const parsed = JSON.parse(text);
       if (!parsed?.author || !parsed?.title) throw new Error('missing fields');
