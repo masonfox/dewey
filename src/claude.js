@@ -109,7 +109,8 @@ Return ONLY valid JSON: { "author": "Full Author Name", "title": "Clean Book Tit
         return null;
       }
       const text = data?.content?.[0]?.text || '';
-      const parsed = JSON.parse(text);
+      const cleanedText = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+      const parsed = JSON.parse(cleanedText);
       if (!parsed?.author || !parsed?.title) throw new Error('missing fields');
       log.info(`🤖 Claude normalization successful: "${parsed.author}" - "${parsed.title}"`);
       return parsed;

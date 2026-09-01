@@ -15,6 +15,17 @@ vi.mock('../src/migrate.js', () => ({
 // Import mocked functions after vi.mock
 import { migrateJob as mockMigrateJob, discoverMigrationUnits as mockDiscoverMigrationUnits } from '../src/migrate.js';
 
+// Polls a condition instead of sleeping a fixed duration, so timing-sensitive
+// tests aren't flaky under slow or jittery schedulers (e.g. Windows timer resolution).
+async function waitFor(conditionFn, { timeout = 2000, interval = 10 } = {}) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    if (await conditionFn()) return true;
+    await new Promise(resolve => setTimeout(resolve, interval));
+  }
+  return false;
+}
+
 // Mock logger
 const mockLogger = {
   debug: vi.fn(() => {}),
@@ -228,18 +239,18 @@ describe('JobQueue', () => {
       await fs.utimes(testDir, now, now);
 
       await jobQueue.enqueue(testDir);
-      
-      // Wait for initial processing attempt
-      await new Promise(resolve => setTimeout(resolve, 60));
+
+      // Wait for the first processing attempt to find the directory unstable
+      await waitFor(() => jobQueue.jobs.size > 0 && Array.from(jobQueue.jobs.values())[0].state === JobState.WAITING_STABILITY);
 
       const job = Array.from(jobQueue.jobs.values())[0];
       expect(job.state).toBe(JobState.WAITING_STABILITY);
       expect(mockMigrateJob).not.toHaveBeenCalled();
 
-      // Wait for stability timeout
-      await new Promise(resolve => setTimeout(resolve, 150));
+      // Wait for the stability timeout to elapse and the job to be reprocessed
+      const completed = await waitFor(() => job.state === JobState.COMPLETED);
 
-      expect(job.state).toBe(JobState.COMPLETED);
+      expect(completed).toBe(true);
       expect(mockMigrateJob).toHaveBeenCalledTimes(1);
     });
 

@@ -11,7 +11,7 @@
  * Tests are skipped if API key is not available.
  */
 
-import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, test, expect, beforeEach, beforeAll, afterAll, vi } from 'vitest';
 
 import fs from 'fs-extra';
 import path from 'path';
@@ -358,8 +358,13 @@ describe('End-to-End Integration Tests', () => {
       const filename = 'Test Author - Test Book.mp3';
       const sourcePath = await createAudioFile(filename);
 
-      // Make destination read-only to force a failure
-      await fs.chmod(destDir, 0o444);
+      // Force the destination write-permission check in migrateJob to fail.
+      // chmod-based read-only directories aren't reliably enforced on Windows
+      // (the read-only attribute doesn't block file creation inside a directory),
+      // so we simulate the failure directly instead, which works on every platform.
+      const writeFileSpy = vi.spyOn(fs, 'writeFile').mockRejectedValueOnce(
+        new Error('EACCES: permission denied (simulated)')
+      );
 
       const job = new Job(sourcePath, JobType.FILE);
 
@@ -376,10 +381,9 @@ describe('End-to-End Integration Tests', () => {
         job.setState(JobState.COMPLETED);
       } catch (error) {
         job.setState(JobState.FAILED, error);
+      } finally {
+        writeFileSpy.mockRestore();
       }
-
-      // Restore permissions
-      await fs.chmod(destDir, 0o755);
 
       // Job should be in failed state
       expect(job.state).toBe(JobState.FAILED);
