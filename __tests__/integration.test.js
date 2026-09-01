@@ -214,11 +214,12 @@ describe('End-to-End Integration Tests', () => {
           input: 'J.K. Rowling - Harry Potter and the Philosophers Stone.mp3',
           // Note: sanitizeSegment removes periods, so "J.K." becomes "J K"
           expectedAuthor: 'J K Rowling',
-          // Claude may return the real book title with its apostrophe ("Philosopher's Stone"),
-          // which sanitizeSegment turns into a stray "S" word rather than "Philosophers"
+          // Claude may return the real book title with its apostrophe ("Philosopher's Stone").
+          // sanitizeSegment doesn't change letter casing, it just replaces the apostrophe
+          // with a space, so that becomes a stray lowercase "s" word rather than "Philosophers".
           expectedTitle: [
             'Harry Potter and the Philosophers Stone',
-            'Harry Potter and the Philosopher S Stone'
+            'Harry Potter and the Philosopher s Stone'
           ]
         },
         {
