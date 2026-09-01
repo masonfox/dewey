@@ -214,11 +214,12 @@ describe('End-to-End Integration Tests', () => {
           input: 'J.K. Rowling - Harry Potter and the Philosophers Stone.mp3',
           // Note: sanitizeSegment removes periods, so "J.K." becomes "J K"
           expectedAuthor: 'J K Rowling',
-          // Claude may return the real book title with its apostrophe ("Philosopher's Stone"),
-          // which sanitizeSegment turns into a stray "S" word rather than "Philosophers"
+          // Claude may return the real book title with its apostrophe ("Philosopher's Stone").
+          // sanitizeSegment doesn't change letter casing, it just replaces the apostrophe
+          // with a space, so that becomes a stray lowercase "s" word rather than "Philosophers".
           expectedTitle: [
             'Harry Potter and the Philosophers Stone',
-            'Harry Potter and the Philosopher S Stone'
+            'Harry Potter and the Philosopher s Stone'
           ]
         },
         {
@@ -344,12 +345,15 @@ describe('End-to-End Integration Tests', () => {
 
       expect(job.state).toBe(JobState.COMPLETED);
 
-      // Claude might return "Some Random Audiobook" (title case normalization)
+      // Claude might return "Some Random Audiobook" (title case normalization), and for
+      // the author, either leave it to the heuristic fallback ("Unknown") or - since the
+      // filename gives it nothing to work with - literally write out "Unknown Author"
       // sanitizeSegment replaces underscores with spaces, so we check for those outcomes
       const possibleDirs = [
         { author: 'Unknown', title: 'some random audiobook' },
         { author: 'Unknown', title: 'Some Random Audiobook' },
-        { author: 'Unknown', title: 'Some random audiobook' }
+        { author: 'Unknown', title: 'Some random audiobook' },
+        { author: 'Unknown Author', title: 'Some Random Audiobook' }
       ];
 
       let found = false;
