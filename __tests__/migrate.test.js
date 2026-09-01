@@ -17,13 +17,21 @@ let testDir;
 let sourceDir;
 let destDir;
 let migratePath, migrateJob, discoverMigrationUnits, cleanupEmptyDirectories;
+let originalAnthropicApiKey;
 
 beforeAll(async () => {
   // Set up environment before importing modules
   testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dewey-test-'));
   sourceDir = path.join(testDir, 'incoming');
   destDir = path.join(testDir, 'library');
-  
+
+  // These tests assert heuristic-only fallback behavior (e.g. author "Unknown"
+  // for filenames with no clear author). Explicitly clear any ambient
+  // ANTHROPIC_API_KEY (CI sets one at the job level for the Claude integration
+  // tests) so real Claude calls can't sneak in and produce different results.
+  originalAnthropicApiKey = process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+
   // Set environment variables before importing
   process.env.SOURCE_DIR = sourceDir;
   process.env.DEST_DIR = destDir;
@@ -31,7 +39,7 @@ beforeAll(async () => {
   process.env.PGID = '0';
   process.env.FILE_MODE = '664';
   process.env.DIR_MODE = '775';
-  
+
   // Now import after env vars are set
   const migrateModule = await import('../src/migrate.js');
   migratePath = migrateModule.migratePath;
@@ -67,6 +75,13 @@ afterAll(async () => {
   // Clean up test directory
   if (testDir && await fs.pathExists(testDir)) {
     await fs.remove(testDir);
+  }
+
+  // Restore ANTHROPIC_API_KEY for any other test files sharing this worker
+  if (originalAnthropicApiKey === undefined) {
+    delete process.env.ANTHROPIC_API_KEY;
+  } else {
+    process.env.ANTHROPIC_API_KEY = originalAnthropicApiKey;
   }
 });
 
