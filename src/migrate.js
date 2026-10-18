@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'fs-extra';
 import { promises as fsPromises } from 'node:fs';
-import { normalizeViaClaude } from './claude.js';
+import { normalizeViaAI } from './ai.js';
 import { heuristicsFromName, sanitizeSegment, isAudio } from './utils.js';
 import { JobType } from './job.js';
 import { SOURCE_DIR, DEST_DIR, FILE_MODE, DIR_MODE, PUID, PGID } from './config.js';
@@ -96,7 +96,7 @@ async function migrateJobFile(job, log) {
   }
 
   const heuristics = heuristicsFromName(base, path.dirname(file));
-  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, path.dirname(file), fileMetadata)) || {};
+  const meta = (await normalizeViaAI(base, heuristics.author, heuristics.title, log, path.dirname(file), fileMetadata)) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: path.parse(base).name, log });
   
   const destDirRoot = DEST_DIR();
@@ -228,7 +228,7 @@ async function migrateJobDirectory(job, log) {
   }
 
   const heuristics = heuristicsFromName(base, null);
-  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, dir, dirMetadata)) || {};
+  const meta = (await normalizeViaAI(base, heuristics.author, heuristics.title, log, dir, dirMetadata)) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: base, log });
   
   const destDirRoot = DEST_DIR();

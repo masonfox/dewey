@@ -10,7 +10,7 @@ import fs from 'fs-extra';
 import path from 'node:path';
 import http from 'node:http';
 import { JobQueue } from './jobQueue.js';
-import { validateClaude } from './claude.js';
+import { validateAI } from './ai.js';
 import { LOG_FILE, LOG_LEVEL, SOURCE_DIR, DEST_DIR, DIRECTORY_STABILITY_TIMEOUT, validateConfig } from './config.js';
 import { isFatal } from './errors.js';
 
@@ -95,8 +95,8 @@ await fs.ensureDir(DEST_DIR());
 // Initialize job queue with logger
 jobQueue.setLogger(log);
 
-// Validate Claude on boot (non-fatal)
-await validateClaude(log);
+// Validate selected AI provider on boot (non-fatal)
+await validateAI(log);
 
 // Set up periodic job cleanup (every 5 minutes)
 setInterval(() => {

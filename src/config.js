@@ -19,6 +19,42 @@ export const ANTHROPIC_API_KEY = () => process.env.ANTHROPIC_API_KEY || '';
 export const CLAUDE_MODEL = () => process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001';
 export const ANTHROPIC_API_URL = () => (process.env.ANTHROPIC_API_URL || 'https://api.anthropic.com').replace(/\/$/, '');
 
+const nonblank = value => value?.trim() || '';
+const keyVariables = {
+  anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY',
+  google: 'GOOGLE_GENERATIVE_AI_API_KEY', 'openai-compatible': 'AI_API_KEY'
+};
+
+/** Resolve at use time; never include raw values in configuration errors. */
+export function resolveAIConfig() {
+  const provider = nonblank(process.env.AI_PROVIDER) || 'anthropic';
+  if (!Object.hasOwn(keyVariables, provider)) {
+    throw new ConfigError('AI_PROVIDER must be one of: anthropic, openai, google, openai-compatible', ['AI_PROVIDER']);
+  }
+  const model = nonblank(process.env.AI_MODEL) || (provider === 'anthropic'
+    ? nonblank(process.env.CLAUDE_MODEL) || 'claude-haiku-4-5-20251001' : '');
+  if (!model) throw new ConfigError('AI_MODEL is required for the selected provider', ['AI_MODEL']);
+  const legacy = provider === 'anthropic' && !nonblank(process.env.AI_BASE_URL);
+  const urlVariable = legacy ? 'ANTHROPIC_API_URL' : 'AI_BASE_URL';
+  let baseURL = nonblank(process.env.AI_BASE_URL) || (legacy
+    ? `${(nonblank(process.env.ANTHROPIC_API_URL) || 'https://api.anthropic.com').replace(/\/+$/, '')}/v1` : undefined);
+  if (baseURL || provider === 'openai-compatible') {
+    try {
+      const url = new URL(baseURL);
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error();
+      baseURL = baseURL.replace(/\/+$/, '');
+    } catch {
+      throw new ConfigError(`${urlVariable} is not a valid URL; an HTTP(S) API base is required`, [urlVariable]);
+    }
+  }
+  const keyVariable = keyVariables[provider];
+  let apiKey = nonblank(process.env[keyVariable]);
+  if (apiKey.length >= 2 && ['"', "'"].includes(apiKey[0]) && apiKey.at(-1) === apiKey[0]) {
+    apiKey = apiKey.slice(1, -1).trim();
+  }
+  return { provider, model, baseURL, apiKey, keyVariable, usable: provider === 'openai-compatible' || Boolean(apiKey) };
+}
+
 // Processing behavior
 export const DIRECTORY_STABILITY_TIMEOUT = () => Number(process.env.DIRECTORY_STABILITY_TIMEOUT || 5000); // 5 seconds default
 
@@ -119,26 +155,15 @@ export function validateConfig() {
     errors.push(`DIR_MODE must be a valid octal mode (e.g., "755", "775") - got: "${dirMode}"`);
   }
 
-  // Validate Claude configuration (warnings only, as Claude is optional)
-  const apiKey = ANTHROPIC_API_KEY();
-  const claudeModel = CLAUDE_MODEL();
-
-  if (!apiKey || apiKey.trim() === '') {
-    warnings.push('ANTHROPIC_API_KEY not set - will use heuristics for metadata extraction');
-  } else if (!apiKey.startsWith('sk-ant-')) {
-    warnings.push('ANTHROPIC_API_KEY does not match expected format (should start with "sk-ant-")');
-  }
-
-  if (!claudeModel || claudeModel.trim() === '') {
-    warnings.push('CLAUDE_MODEL not set - using default model');
-  }
-
-  // Validate API URL format
-  const apiUrl = ANTHROPIC_API_URL();
   try {
-    new URL(apiUrl);
-  } catch (err) {
-    errors.push(`ANTHROPIC_API_URL is not a valid URL: "${apiUrl}"`);
+    const ai = resolveAIConfig();
+    if (!ai.usable) warnings.push(ai.keyVariable + ' not set - will use heuristics for metadata extraction');
+    else if (ai.provider === 'anthropic' && !ai.apiKey.startsWith('sk-ant-')) {
+      warnings.push('ANTHROPIC_API_KEY does not match expected format (should start with "sk-ant-")');
+    }
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error;
+    errors.push(error.message);
   }
 
   // Throw if there are any errors

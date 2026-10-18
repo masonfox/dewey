@@ -1,3 +1,4 @@
+import { clearAIEnv } from './ai-env.js';
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -7,8 +8,15 @@ import { extractAudioMetadata } from '../src/metadata.js';
 // Check if we have an API key for integration tests
 const hasApiKey = () => {
   const key = process.env.ANTHROPIC_API_KEY;
-  return key && key.trim() !== '' && key.startsWith('sk-ant-');
+  return process.env.RUN_LIVE_AI_TESTS === '1' && key && key.trim() !== '' && key.startsWith('sk-ant-');
 };
+
+// Keep live legacy tests on Anthropic regardless of ambient provider selection.
+const liveKey = process.env.ANTHROPIC_API_KEY;
+beforeEach(() => {
+  clearAIEnv();
+  if (process.env.RUN_LIVE_AI_TESTS === '1' && liveKey) process.env.ANTHROPIC_API_KEY = liveKey;
+});
 
 // Check if test audio files exist (for local testing)
 const hasTestFiles = async () => {

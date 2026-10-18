@@ -1,7 +1,7 @@
 {
   "name": "dewey",
   "version": "2.1.1",
-  "description": "Audiobook migrator with Claude normalization",
+  "description": "Audiobook migrator with optional multi-provider AI normalization",
   "license": "MIT",
   "author": "Mason Fox <masonfox22@gmail.com>",
   "type": "module",
@@ -15,11 +15,16 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "axios": "^1.7.5",
+    "@ai-sdk/anthropic": "4.0.82",
+    "@ai-sdk/google": "4.0.99",
+    "@ai-sdk/openai": "4.0.96",
+    "@ai-sdk/openai-compatible": "3.0.71",
+    "ai": "7.0.143",
     "chokidar": "^3.6.0",
     "fs-extra": "^11.2.0",
     "pino": "^9.3.1",
-    "pino-pretty": "^11.2.2"
+    "pino-pretty": "^11.2.2",
+    "zod": "4.1.12"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.0.18",
