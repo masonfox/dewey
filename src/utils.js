@@ -1,7 +1,23 @@
 import path from 'node:path';
+import { INGEST_EBOOKS } from './config.js';
 
 export function isAudio(p) {
   return /\.(mp3|m4b|m4a)$/i.test(p);
+}
+
+export function isEbook(p) {
+  return INGEST_EBOOKS() && /\.epub$/i.test(p);
+}
+
+export function isSupportedBook(p) {
+  return isAudio(p) || isEbook(p);
+}
+
+/** 'audio' | 'epub' | null, honoring INGEST_EBOOKS */
+export function bookFileKind(p) {
+  if (isAudio(p)) return 'audio';
+  if (isEbook(p)) return 'epub';
+  return null;
 }
 
 export function sanitizeSegment(s) {

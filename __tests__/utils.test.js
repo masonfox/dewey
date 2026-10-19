@@ -1,5 +1,5 @@
-import { describe, test, expect } from 'vitest';
-import { isAudio, sanitizeSegment, heuristicsFromName } from '../src/utils.js';
+import { describe, test, expect, afterEach } from 'vitest';
+import { isAudio, isEbook, isSupportedBook, bookFileKind, sanitizeSegment, heuristicsFromName } from '../src/utils.js';
 
 describe('utils', () => {
   describe('isAudio', () => {
@@ -83,6 +83,41 @@ describe('utils', () => {
     test('should clean file extensions', () => {
       const result = heuristicsFromName('Author - Title.m4b');
       expect(result.title).toBe('Title');
+    });
+  });
+
+  describe('book format classification', () => {
+    afterEach(() => {
+      delete process.env.INGEST_EBOOKS;
+    });
+
+    test('identifies epub files case-insensitively', () => {
+      expect(isEbook('Dune.epub')).toBe(true);
+      expect(isEbook('/path/to/DUNE.EPUB')).toBe(true);
+      expect(bookFileKind('Dune.EPUB')).toBe('epub');
+    });
+
+    test('classifies audio extensions as audio', () => {
+      for (const name of ['a.mp3', 'a.M4B', 'a.m4a']) {
+        expect(isSupportedBook(name)).toBe(true);
+        expect(bookFileKind(name)).toBe('audio');
+        expect(isEbook(name)).toBe(false);
+      }
+    });
+
+    test('rejects unsupported files', () => {
+      for (const name of ['a.pdf', 'a.mobi', 'cover.jpg', 'a.epub.txt', 'noextension']) {
+        expect(isSupportedBook(name)).toBe(false);
+        expect(bookFileKind(name)).toBe(null);
+      }
+    });
+
+    test('treats epub as unsupported when INGEST_EBOOKS=false', () => {
+      process.env.INGEST_EBOOKS = 'false';
+      expect(isEbook('Dune.epub')).toBe(false);
+      expect(isSupportedBook('Dune.epub')).toBe(false);
+      expect(bookFileKind('Dune.epub')).toBe(null);
+      expect(isSupportedBook('Dune.m4b')).toBe(true);
     });
   });
 });

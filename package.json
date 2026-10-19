@@ -21,9 +21,11 @@
     "@ai-sdk/openai-compatible": "3.0.71",
     "ai": "7.0.143",
     "chokidar": "^3.6.0",
+    "fast-xml-parser": "5.11.2",
     "fs-extra": "^11.2.0",
     "pino": "^9.3.1",
     "pino-pretty": "^11.2.2",
+    "yauzl": "3.4.0",
     "zod": "4.1.12"
   },
   "devDependencies": {

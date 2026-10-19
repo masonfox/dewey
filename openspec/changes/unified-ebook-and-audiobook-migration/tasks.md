@@ -1,8 +1,8 @@
 ## 1. Foundations: configuration, formats, dependencies
 
-- [ ] 1.1 Add `yauzl` and `fast-xml-parser` (pinned versions) to `package.json`, then run `bun install`; verify the lockfile updates and `npm test` still passes
-- [ ] 1.2 Add `LIBRARY_LAYOUT`, `REVIEW_DIR`, `DRY_RUN`, `INGEST_EBOOKS` getters to `src/config.js` and include them in `getConfig()`. Add `validateConfig()` checks for an invalid layout and for a `REVIEW_DIR` inside `DEST_DIR` (D9). Verify with new cases in `__tests__/config.test.js` covering defaults, case-insensitive layout values, invalid layout, and `REVIEW_DIR` inside `DEST_DIR`
-- [ ] 1.3 Add `isEbook`, `isSupportedBook`, and `bookFileKind` to `src/utils.js`, honoring `INGEST_EBOOKS`. Verify with `__tests__/utils.test.js` cases for `.epub`/`.EPUB`, audio extensions, unsupported files, and `INGEST_EBOOKS=false`
+- [x] 1.1 Add `yauzl` and `fast-xml-parser` (pinned versions) to `package.json`, then run `bun install`; verify the lockfile updates and `npm test` still passes
+- [x] 1.2 Add `LIBRARY_LAYOUT`, `REVIEW_DIR`, `DRY_RUN`, `INGEST_EBOOKS` getters to `src/config.js` and include them in `getConfig()`. Add `validateConfig()` checks for an invalid layout and for a `REVIEW_DIR` inside `DEST_DIR` (D9). Verify with new cases in `__tests__/config.test.js` covering defaults, case-insensitive layout values, invalid layout, and `REVIEW_DIR` inside `DEST_DIR`
+- [x] 1.3 Add `isEbook`, `isSupportedBook`, and `bookFileKind` to `src/utils.js`, honoring `INGEST_EBOOKS`. Verify with `__tests__/utils.test.js` cases for `.epub`/`.EPUB`, audio extensions, unsupported files, and `INGEST_EBOOKS=false`
 
 ## 2. Metadata extraction
 

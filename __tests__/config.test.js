@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
+import path from 'node:path';
 import { ConfigError } from '../src/errors.js';
 
 describe('Configuration Validation', () => {
@@ -237,5 +238,79 @@ describe('Configuration Validation', () => {
       expect(error.invalidFields).toBeDefined();
       expect(error.invalidFields.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('Library layout, review, dry-run, and ebook configuration', () => {
+  let originalEnv;
+
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+    process.env.SOURCE_DIR = './data/incoming';
+    process.env.DEST_DIR = './data/library';
+    process.env.LOG_LEVEL = 'info';
+    for (const name of ['LIBRARY_LAYOUT', 'REVIEW_DIR', 'DRY_RUN', 'INGEST_EBOOKS']) delete process.env[name];
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  test('uses defaults when unset', async () => {
+    const config = await import('../src/config.js?t=' + Date.now());
+    expect(config.LIBRARY_LAYOUT()).toBe('audiobookshelf');
+    expect(config.REVIEW_DIR()).toBe(path.join('./data/incoming', '.dewey-review'));
+    expect(config.DRY_RUN()).toBe(false);
+    expect(config.INGEST_EBOOKS()).toBe(true);
+    expect(config.getConfig()).toMatchObject({
+      LIBRARY_LAYOUT: 'audiobookshelf', DRY_RUN: false, INGEST_EBOOKS: true
+    });
+    expect(() => config.validateConfig()).not.toThrow();
+  });
+
+  test('treats a blank layout as the default', async () => {
+    process.env.LIBRARY_LAYOUT = '   ';
+    const config = await import('../src/config.js?t=' + Date.now());
+    expect(config.LIBRARY_LAYOUT()).toBe('audiobookshelf');
+  });
+
+  test('accepts layout values case-insensitively', async () => {
+    process.env.LIBRARY_LAYOUT = 'BookOrbit';
+    const config = await import('../src/config.js?t=' + Date.now());
+    expect(config.LIBRARY_LAYOUT()).toBe('bookorbit');
+    expect(() => config.validateConfig()).not.toThrow();
+  });
+
+  test('rejects an invalid layout naming LIBRARY_LAYOUT', async () => {
+    process.env.LIBRARY_LAYOUT = 'calibre';
+    const config = await import('../src/config.js?t=' + Date.now());
+    expect(() => config.validateConfig()).toThrow(ConfigError);
+    expect(() => config.validateConfig()).toThrow(/LIBRARY_LAYOUT/);
+  });
+
+  test('rejects a REVIEW_DIR inside DEST_DIR naming REVIEW_DIR', async () => {
+    process.env.REVIEW_DIR = './data/library/.review';
+    const config = await import('../src/config.js?t=' + Date.now());
+    expect(() => config.validateConfig()).toThrow(/REVIEW_DIR/);
+  });
+
+  test('rejects a REVIEW_DIR equal to DEST_DIR', async () => {
+    process.env.REVIEW_DIR = './data/library';
+    const config = await import('../src/config.js?t=' + Date.now());
+    expect(() => config.validateConfig()).toThrow(/REVIEW_DIR/);
+  });
+
+  test('accepts a REVIEW_DIR beside DEST_DIR with a shared prefix', async () => {
+    process.env.REVIEW_DIR = './data/library-review';
+    const config = await import('../src/config.js?t=' + Date.now());
+    expect(() => config.validateConfig()).not.toThrow();
+  });
+
+  test('parses DRY_RUN and INGEST_EBOOKS flags', async () => {
+    process.env.DRY_RUN = 'TRUE';
+    process.env.INGEST_EBOOKS = 'false';
+    const config = await import('../src/config.js?t=' + Date.now());
+    expect(config.DRY_RUN()).toBe(true);
+    expect(config.INGEST_EBOOKS()).toBe(false);
   });
 });
