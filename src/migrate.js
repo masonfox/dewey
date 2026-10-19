@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'fs-extra';
 import { promises as fsPromises } from 'node:fs';
-import { normalizeViaClaude } from './claude.js';
+import { normalizeViaAI } from './ai.js';
 import { heuristicsFromName, sanitizeSegment, isAudio } from './utils.js';
 import { JobType } from './job.js';
 import { SOURCE_DIR, DEST_DIR, FILE_MODE, DIR_MODE, PUID, PGID } from './config.js';
@@ -96,7 +96,10 @@ async function migrateJobFile(job, log) {
   }
 
   const heuristics = heuristicsFromName(base, path.dirname(file));
-  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, path.dirname(file), fileMetadata)) || {};
+  // Loose files directly in SOURCE_DIR have no useful parent
+  const parent = path.dirname(file);
+  const parentDir = path.resolve(parent) === path.resolve(SOURCE_DIR()) ? null : parent;
+  const meta = (await normalizeViaAI(base, heuristics.author, heuristics.title, log, parentDir, fileMetadata)) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: path.parse(base).name, log });
   
   const destDirRoot = DEST_DIR();
@@ -228,7 +231,10 @@ async function migrateJobDirectory(job, log) {
   }
 
   const heuristics = heuristicsFromName(base, null);
-  const meta = (await normalizeViaClaude(base, heuristics.author, heuristics.title, log, dir, dirMetadata)) || {};
+  // Nested directories may sit under an author folder; top-level ones have no useful parent
+  const parent = path.dirname(dir);
+  const parentDir = path.resolve(parent) === path.resolve(SOURCE_DIR()) ? null : parent;
+  const meta = (await normalizeViaAI(base, heuristics.author, heuristics.title, log, parentDir, dirMetadata)) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: base, log });
   
   const destDirRoot = DEST_DIR();

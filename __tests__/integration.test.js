@@ -17,12 +17,20 @@ import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
 import { Job, JobType, JobState } from '../src/job.js';
+import { clearAIEnv } from './ai-env.js';
 
 // Check if we have an API key for integration tests
 const hasApiKey = () => {
   const key = process.env.ANTHROPIC_API_KEY;
-  return key && key.trim() !== '' && key.startsWith('sk-ant-');
+  return process.env.RUN_LIVE_AI_TESTS === '1' && key && key.trim() !== '' && key.startsWith('sk-ant-');
 };
+
+// Keep live legacy tests on Anthropic regardless of ambient provider selection.
+const liveKey = process.env.ANTHROPIC_API_KEY;
+beforeEach(() => {
+  clearAIEnv();
+  if (process.env.RUN_LIVE_AI_TESTS === '1' && liveKey) process.env.ANTHROPIC_API_KEY = liveKey;
+});
 
 // Simple mock logger that tracks calls without using mock()
 const createMockLog = () => ({
@@ -290,6 +298,7 @@ describe('End-to-End Integration Tests', () => {
 
   describe('Fallback to Heuristics', () => {
     // These tests run regardless of API key availability
+    beforeEach(() => clearAIEnv());
 
     test('should fall back to heuristics when Claude API is unavailable', async () => {
       // Temporarily clear API key
@@ -318,7 +327,7 @@ describe('End-to-End Integration Tests', () => {
         // Should have logged a warning about missing API key
         const warnCalls = mockLog._calls.warn;
         const hasApiWarning = warnCalls.some(call =>
-          call[0]?.includes('Claude API key not set')
+          call[0]?.includes('ANTHROPIC_API_KEY not set')
         );
         expect(hasApiWarning).toBe(true);
       } finally {
@@ -417,5 +426,5 @@ describe('End-to-End Integration Tests', () => {
 // Print a helpful message if tests are skipped
 if (!hasApiKey()) {
   console.log('\n⚠️  Integration tests requiring Claude API will be skipped.');
-  console.log('   Set ANTHROPIC_API_KEY environment variable to run full integration tests.\n');
+  console.log('   Set RUN_LIVE_AI_TESTS=1 and ANTHROPIC_API_KEY to run live integration tests.\n');
 }

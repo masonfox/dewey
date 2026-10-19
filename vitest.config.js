@@ -5,6 +5,7 @@ export default defineConfig(({ mode }) => ({
   test: {
     globals: false, // Don't auto-inject globals (keep explicit imports)
     environment: 'node',
+    setupFiles: ['__tests__/setup.js'],
     testTimeout: 10000, // Default timeout
     hookTimeout: 10000,
     include: ['__tests__/**/*.test.js'],
