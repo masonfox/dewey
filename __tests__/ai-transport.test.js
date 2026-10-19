@@ -118,3 +118,31 @@ test('real SDK transport does not multiply the three-attempt retry budget', asyn
     vi.useRealTimers();
   }
 });
+
+test('connection reset while reading a 200 response body is retried', async () => {
+  vi.useFakeTimers();
+  try {
+    Object.assign(process.env, { AI_PROVIDER: 'openai-compatible', AI_MODEL: 'chosen-model', AI_BASE_URL: 'http://retry-test/v1' });
+    const body = new ReadableStream({ start(controller) {
+      controller.error(Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }));
+    } });
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(Response.json(response('openai-compatible')));
+    vi.stubGlobal('fetch', fetch);
+    const result = normalizeViaAI('file.mp3', '', '', log);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await result).toEqual({ author: 'Transport Author', title: 'Transport Title' });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('malformed JSON in a 200 response is not retried', async () => {
+  Object.assign(process.env, { AI_PROVIDER: 'openai-compatible', AI_MODEL: 'chosen-model', AI_BASE_URL: 'http://retry-test/v1' });
+  const fetch = vi.fn(async () => new Response('{not json', { status: 200, headers: { 'content-type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetch);
+  expect(await normalizeViaAI('file.mp3', '', '', log)).toBeNull();
+  expect(fetch).toHaveBeenCalledOnce();
+});

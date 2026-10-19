@@ -47,7 +47,8 @@ function label(config) {
 function failure(error) {
   const status = APICallError.isInstance(error) ? error.statusCode : undefined;
   const timeout = error?.name === 'AbortError' || error?.name === 'TimeoutError';
-  const network = APICallError.isInstance(error) ? error.isRetryable && !status
+  // A retryable SDK error with a 2xx status is a broken response body, not an HTTP failure.
+  const network = APICallError.isInstance(error) ? error.isRetryable && (!status || (status >= 200 && status < 300))
     : error instanceof TypeError || ['ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT'].includes(error?.code);
   return { retryable: timeout || network || status === 408 || status === 429 || (status >= 500 && status < 600),
     category: status ? `HTTP ${status}` : timeout ? 'timeout' : network ? 'network' : 'provider/content failure' };
