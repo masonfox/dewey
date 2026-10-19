@@ -6,28 +6,28 @@
 
 ## 2. Metadata extraction
 
-- [ ] 2.1 Implement `extractEpubMetadata(path, log)` in `src/metadata.js` (D2): container.xml → OPF, title, author-role creator, language, ISBN (checksum-validated, 10→13)/ASIN/other identifiers, `readaloud` from media overlays, and an entry-size cap. Verify with tests that build small EPUB fixtures in a temp dir: well-formed, role via `<meta refines>`, no roles, media-overlay, missing OPF, and non-ZIP file (warns and returns null)
-- [ ] 2.2 Broaden `extractAudioMetadata` to request all format tags and read keys case-insensitively, adding `isbn`, `asin`, and `language` without changing existing returned fields (D3). Verify that existing `__tests__/metadata.test.js` passes unchanged, plus new mocked-ffprobe cases for `ASIN`/`AUDIBLE_ASIN`/`ISBN`
-- [ ] 2.3 Generalize `extractDirectoryMetadata` into `extractUnitMetadata(files, log)` with m4b → epub → mp3/m4a → readaloud precedence and merged identifiers/language (D10), keeping `extractDirectoryMetadata` as a wrapper. Verify with tests for audio-only (m4b-first unchanged), mixed m4b+epub, and epub-only units
+- [x] 2.1 Implement `extractEpubMetadata(path, log)` in `src/metadata.js` (D2): container.xml → OPF, title, author-role creator, language, ISBN (checksum-validated, 10→13)/ASIN/other identifiers, `readaloud` from media overlays, and an entry-size cap. Verify with tests that build small EPUB fixtures in a temp dir: well-formed, role via `<meta refines>`, no roles, media-overlay, missing OPF, and non-ZIP file (warns and returns null)
+- [x] 2.2 Broaden `extractAudioMetadata` to request all format tags and read keys case-insensitively, adding `isbn`, `asin`, and `language` without changing existing returned fields (D3). Verify that existing `__tests__/metadata.test.js` passes unchanged, plus new mocked-ffprobe cases for `ASIN`/`AUDIBLE_ASIN`/`ISBN`
+- [x] 2.3 Generalize `extractDirectoryMetadata` into `extractUnitMetadata(files, log)` with m4b → epub → mp3/m4a → readaloud precedence and merged identifiers/language (D10), keeping `extractDirectoryMetadata` as a wrapper. Verify with tests for audio-only (m4b-first unchanged), mixed m4b+epub, and epub-only units
 
 ## 3. Discovery and queue grouping
 
-- [ ] 3.1 Replace `isAudio` gating with `isSupportedBook` in `discoverMigrationUnits`. Skip `REVIEW_DIR` during traversal. Verify with `__tests__/migrate.test.js` discovery cases: loose epub, mixed directory, epub-only directory, author folder with nested books, and a review folder that is ignored
-- [ ] 3.2 Update `JobQueue` grouping helpers (`checkForParentDirectoryJob`, `shouldSkipParentDirectory`, `directoryContainsAudio` → supported-book equivalent) and ignore paths under `REVIEW_DIR`. Verify with `__tests__/jobQueue.test.js` cases where a loose `.epub` beside an `.m4b` in a subfolder yields one directory job
-- [ ] 3.3 Add a chokidar `ignored` predicate for `REVIEW_DIR` in `src/index.js` (D8). Verify with a unit test of the exported predicate showing that paths under `REVIEW_DIR` are ignored and sibling paths are not
+- [x] 3.1 Replace `isAudio` gating with `isSupportedBook` in `discoverMigrationUnits`. Skip `REVIEW_DIR` during traversal. Verify with `__tests__/migrate.test.js` discovery cases: loose epub, mixed directory, epub-only directory, author folder with nested books, and a review folder that is ignored
+- [x] 3.2 Update `JobQueue` grouping helpers (`checkForParentDirectoryJob`, `shouldSkipParentDirectory`, `directoryContainsAudio` → supported-book equivalent) and ignore paths under `REVIEW_DIR`. Verify with `__tests__/jobQueue.test.js` cases where a loose `.epub` beside an `.m4b` in a subfolder yields one directory job
+- [x] 3.3 Add a chokidar `ignored` predicate for `REVIEW_DIR` in `src/index.js` (D8). Verify with a unit test of the exported predicate showing that paths under `REVIEW_DIR` are ignored and sibling paths are not
 
 ## 4. Layout strategies
 
-- [ ] 4.1 Create `src/layout.js` with `audiobookshelf` and `bookorbit` strategies and `getLayout()` (D6), including the read-aloud collision suffix for `audiobookshelf`. Verify with a new `__tests__/layout.test.js` covering every scenario in `specs/library-layout/spec.md`
+- [x] 4.1 Create `src/layout.js` with `audiobookshelf` and `bookorbit` strategies and `getLayout()` (D6), including the read-aloud collision suffix for `audiobookshelf`. Verify with a new `__tests__/layout.test.js` covering every scenario in `specs/library-layout/spec.md`
 
 ## 5. Cross-format matching
 
-- [ ] 5.1 Create `src/matching.js` with `authorKey`, `titleKey`, the exported noise-word list, abridged-marker detection, and near-match detection (D4). Verify with a new `__tests__/matching.test.js` table of key-normalization and near-match cases ("Herbert, Frank", diacritics, leading articles, "(Unabridged)", "[M4B]", subtitle prefix, small typos)
-- [ ] 5.2 Implement `findCandidates(unit)`: fresh on-demand `DEST_DIR` read, author-key filter, and lazy candidate detail loading (EPUB OPF, one audio file's tags, name markers). Verify with temp-dir library fixtures that show only same-author-key book folders containing supported files are returned
-- [ ] 5.3 Implement `resolveMatch(unit, candidates)` in the order identifier → exact keys → near → AI → new/ambiguous, with abridged, language, multiple-candidate, and differing-EPUB-ISBN ambiguity rules. Verify with tests covering every scenario in `specs/cross-format-matching/spec.md` (AI mocked)
-- [ ] 5.4 Add `resolveMatchViaAI` to `src/ai.js`, reusing pacing, deadline, retry, and refusal handling. Accept only a valid, high-confidence, same-edition single candidate (D5). Verify with `__tests__/ai.test.js` cases: accepted match, null match, medium confidence, out-of-range index, invalid JSON, refusal, unusable config (all non-accepted cases → ambiguous), and attempts counted toward the 45/min budget
-- [ ] 5.5 Make `buildPrompt` format-aware (ebook/audio label, OPF metadata section) while preserving the JSON output contract. Verify that existing prompt tests still pass, plus a new test asserting that an EPUB unit's prompt names the ebook format and OPF title/author/language
-- [ ] 5.6 Add the single `info` match-decision log line (outcome, folders, deciding signal) and verify its content in matching tests with a captured logger
+- [x] 5.1 Create `src/matching.js` with `authorKey`, `titleKey`, the exported noise-word list, abridged-marker detection, and near-match detection (D4). Verify with a new `__tests__/matching.test.js` table of key-normalization and near-match cases ("Herbert, Frank", diacritics, leading articles, "(Unabridged)", "[M4B]", subtitle prefix, small typos)
+- [x] 5.2 Implement `findCandidates(unit)`: fresh on-demand `DEST_DIR` read, author-key filter, and lazy candidate detail loading (EPUB OPF, one audio file's tags, name markers). Verify with temp-dir library fixtures that show only same-author-key book folders containing supported files are returned
+- [x] 5.3 Implement `resolveMatch(unit, candidates)` in the order identifier → exact keys → near → AI → new/ambiguous, with abridged, language, multiple-candidate, and differing-EPUB-ISBN ambiguity rules. Verify with tests covering every scenario in `specs/cross-format-matching/spec.md` (AI mocked)
+- [x] 5.4 Add `resolveMatchViaAI` to `src/ai.js`, reusing pacing, deadline, retry, and refusal handling. Accept only a valid, high-confidence, same-edition single candidate (D5). Verify with `__tests__/ai.test.js` cases: accepted match, null match, medium confidence, out-of-range index, invalid JSON, refusal, unusable config (all non-accepted cases → ambiguous), and attempts counted toward the 45/min budget
+- [x] 5.5 Make `buildPrompt` format-aware (ebook/audio label, OPF metadata section) while preserving the JSON output contract. Verify that existing prompt tests still pass, plus a new test asserting that an EPUB unit's prompt names the ebook format and OPF title/author/language
+- [x] 5.6 Add the single `info` match-decision log line (outcome, folders, deciding signal) and verify its content in matching tests with a captured logger
 
 ## 6. Planning, execution, and safety
 

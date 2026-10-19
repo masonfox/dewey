@@ -38,7 +38,7 @@ A unit SHALL be classified as ambiguous, and SHALL NOT be copied into the librar
 - More than one candidate matches equally.
 - One side is marked abridged and the other is not.
 - Both sides have a known language and the languages differ.
-- Only a near match exists (same author key, title keys related by a subtitle or a small edit distance) and AI resolution did not confirm exactly one candidate.
+- Only a near match exists (same author key, title keys related by a subtitle or a small edit distance) and AI resolution neither confirmed exactly one candidate nor stated with high confidence that no candidate is the same work.
 
 Ambiguous units SHALL be quarantined for manual resolution as defined by migration safety.
 
@@ -55,11 +55,15 @@ Ambiguous units SHALL be quarantined for manual resolution as defined by migrati
 - **THEN** the unit is quarantined as ambiguous
 
 ### Requirement: Bounded AI-assisted resolution
-AI resolution SHALL be attempted only for near matches, only when AI configuration is usable, and only after identifier and deterministic matching fail. The request SHALL include the unit's metadata and at most five candidates. It SHALL accept only a response naming exactly one listed candidate as the same work, edition-compatible, with high confidence. Every other outcome SHALL leave the unit ambiguous: no match, low confidence, an invalid response, refusal, timeout, or unavailable AI. These requests SHALL follow the same per-request attempt limits, deadlines, and pacing budget as metadata normalization.
+AI resolution SHALL be attempted only for near matches, only when AI configuration is usable, and only after identifier and deterministic matching fail. The request SHALL include the unit's metadata and at most five candidates. It SHALL accept only a response naming exactly one listed candidate as the same work, edition-compatible, with high confidence. A response stating with high confidence that none of the listed candidates is the same work SHALL make the unit a new book. Every other outcome SHALL leave the unit ambiguous: a match that is not edition-compatible, low or medium confidence, an invalid response, refusal, timeout, or unavailable AI. These requests SHALL follow the same per-request attempt limits, deadlines, and pacing budget as metadata normalization.
 
 #### Scenario: AI confirms a subtitle variant
 - **WHEN** an audiobook "Dune: Deluxe Edition" near-matches the library book "Dune" and AI names that book with high confidence
 - **THEN** the audiobook is placed in the existing Dune folder
+
+#### Scenario: AI rules out a sequel
+- **WHEN** "Dune Messiah" by Frank Herbert near-matches the library book "Dune" and AI answers with high confidence that no listed candidate is the same work
+- **THEN** "Dune Messiah" becomes a new book at its own normalized author/title folder
 
 #### Scenario: AI unavailable
 - **WHEN** a near match exists and no AI provider is usable

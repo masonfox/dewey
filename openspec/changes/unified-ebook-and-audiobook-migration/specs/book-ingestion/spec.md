@@ -49,7 +49,7 @@ An EPUB whose OPF manifest declares media overlays SHALL be classified as a read
 - **THEN** the read-aloud EPUB is added to that book folder and the original EPUB is unchanged
 
 ### Requirement: Unit metadata source precedence
-When a unit contains several files with embedded metadata, the system SHALL choose author/title metadata from the first available source in this order: `.m4b`, non-read-aloud EPUB, `.mp3`/`.m4a`, read-aloud EPUB. Identifiers SHALL be collected from every file in the unit.
+When a unit contains several files with embedded metadata, the system SHALL choose author/title metadata from the first available source in this order: `.m4b`, non-read-aloud EPUB, `.mp3`/`.m4a`, read-aloud EPUB. Identifiers SHALL be collected from every EPUB and `.m4b` file in the unit and from one representative `.mp3`/`.m4a` track, since tracks of one recording share tags.
 
 #### Scenario: Audio and EPUB disagree on capitalization
 - **WHEN** a directory unit contains `Dune.m4b` tagged "DUNE" and `Dune.epub` whose OPF says "Dune"
