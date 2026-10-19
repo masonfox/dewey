@@ -96,7 +96,10 @@ async function migrateJobFile(job, log) {
   }
 
   const heuristics = heuristicsFromName(base, path.dirname(file));
-  const meta = (await normalizeViaAI(base, heuristics.author, heuristics.title, log, path.dirname(file), fileMetadata)) || {};
+  // Loose files directly in SOURCE_DIR have no useful parent
+  const parent = path.dirname(file);
+  const parentDir = path.resolve(parent) === path.resolve(SOURCE_DIR()) ? null : parent;
+  const meta = (await normalizeViaAI(base, heuristics.author, heuristics.title, log, parentDir, fileMetadata)) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: path.parse(base).name, log });
   
   const destDirRoot = DEST_DIR();

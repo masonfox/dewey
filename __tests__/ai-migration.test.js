@@ -70,3 +70,20 @@ test.each([
   if (expected) expect(prompt).toContain(expected);
   else expect(prompt).not.toContain('PARENT_DIR');
 });
+
+test.each([
+  ['nested', ['Parent Author', 'Nested Book.mp3'], 'PARENT_DIR: Parent Author'],
+  ['top-level', ['Top Level Book.mp3'], null],
+])('%s loose file migration sends parent directory context to AI', async (_, segments, expected) => {
+  const source = path.join(process.env.SOURCE_DIR, ...segments);
+  await fs.ensureDir(path.dirname(source));
+  await fs.writeFile(source, 'audio bytes');
+  extractAudioMetadata.mockResolvedValue({ hasMetadata: false });
+  const fetch = vi.fn(async () => Response.json({ id: 'chat_test', object: 'chat.completion', created: 1, model: 'selected-migration-model',
+    choices: [{ index: 0, message: { role: 'assistant', content: '{"author":"AI Author","title":"AI Title"}' }, finish_reason: 'stop' }] }));
+  vi.stubGlobal('fetch', fetch);
+  await migrateJob(new Job(source, JobType.FILE), log);
+  const prompt = JSON.stringify(JSON.parse(fetch.mock.calls[0][1].body).messages);
+  if (expected) expect(prompt).toContain(expected);
+  else expect(prompt).not.toContain('PARENT_DIR');
+});
