@@ -14,6 +14,7 @@ import { validateAI } from './ai.js';
 import { LOG_FILE, LOG_LEVEL, SOURCE_DIR, DEST_DIR, DIRECTORY_STABILITY_TIMEOUT, validateConfig } from './config.js';
 import { isFatal } from './errors.js';
 import { isWithinReviewDir } from './utils.js';
+import { sweepStalePartials } from './migrate.js';
 
 // Read version from package.json
 const __filename = fileURLToPath(import.meta.url);
@@ -92,6 +93,9 @@ if (globalThis.__configWarnings && globalThis.__configWarnings.length > 0) {
 // Ensure source directory exists
 await fs.ensureDir(SOURCE_DIR());
 await fs.ensureDir(DEST_DIR());
+
+// Remove staging files left by an interrupted run (D7)
+await sweepStalePartials(log);
 
 // Initialize job queue with logger
 jobQueue.setLogger(log);

@@ -393,7 +393,11 @@ export class JobQueue {
       job.setState(JobState.COMPLETED);
       job.result = result;
       
-      jobLogger.info(`✅ Migration completed: "${job.displayName}"`);
+      if (result?.outcome === 'quarantined') {
+        jobLogger.info(`✅ Completed (quarantined for review): "${job.displayName}"`);
+      } else {
+        jobLogger.info(`✅ Migration completed: "${job.displayName}"`);
+      }
 
     } catch (error) {
       const jobLogger = job.createLogger(this.logger);

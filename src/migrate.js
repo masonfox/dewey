@@ -1,29 +1,39 @@
 import path from 'node:path';
+import crypto from 'node:crypto';
 import fs from 'fs-extra';
-import { promises as fsPromises } from 'node:fs';
+import { promises as fsPromises, constants as fsConstants } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 import { normalizeViaAI } from './ai.js';
-import { heuristicsFromName, sanitizeSegment, isAudio, isSupportedBook, isWithinReviewDir } from './utils.js';
+import { heuristicsFromName, sanitizeSegment, isSupportedBook, bookFileKind, isPathWithin, isWithinReviewDir } from './utils.js';
 import { JobType } from './job.js';
-import { SOURCE_DIR, DEST_DIR, FILE_MODE, DIR_MODE, PUID, PGID } from './config.js';
+import { SOURCE_DIR, DEST_DIR, REVIEW_DIR, DRY_RUN, FILE_MODE, DIR_MODE, PUID, PGID } from './config.js';
 import { SkipError } from './errors.js';
-import { extractAudioMetadata, extractDirectoryMetadata } from './metadata.js';
+import { extractAudioMetadata, extractEpubMetadata, extractDirectoryMetadata } from './metadata.js';
+import { findCandidates, resolveMatch } from './matching.js';
+import { getLayout } from './layout.js';
 
 // Re-export SkipError for backward compatibility
 export { SkipError } from './errors.js';
+
+/** Staging prefix for in-flight copies (D7); dot-prefixed so library scanners skip it */
+export const PARTIAL_PREFIX = '.dewey-partial-';
+export const REVIEW_FILE = 'dewey-review.json';
+
+const DRY = '🧪 [dry-run]';
 
 // Returns canonical, normalized author and title for migration
 function getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle, log }) {
   let authorRaw = meta?.author || heuristics?.author || 'Unknown';
   let titleRaw = meta?.title || heuristics?.title || fallbackTitle;
-  
+
   const author = sanitizeSegment(authorRaw);
   const title = sanitizeSegment(titleRaw);
-  
+
   // Log warning if we couldn't determine a proper author
   if (author === 'Unknown') {
     log?.warn(`⚠️  Could not determine author, using "Unknown" for "${fallbackTitle}"`);
   }
-  
+
   return {
     author,
     title
@@ -44,19 +54,12 @@ export async function migratePath(p, log) {
  */
 export async function migrateJob(job, log) {
   log.debug(`🎬 migrateJob called with job type: ${job.type}, id: ${job.id}, sourcePath: ${job.sourcePath}`);
-  
+
   try {
-    let result;
-    if (job.type === JobType.FILE) {
-      log.debug(`📄 Calling migrateJobFile for ${job.id}`);
-      result = await migrateJobFile(job, log);
-    } else if (job.type === JobType.DIRECTORY) {
-      log.debug(`📁 Calling migrateJobDirectory for ${job.id}`);
-      result = await migrateJobDirectory(job, log);
-    } else {
+    if (job.type !== JobType.FILE && job.type !== JobType.DIRECTORY) {
       throw new Error(`Unsupported job type: ${job.type}`);
     }
-    
+    const result = await migrateUnit(job, log);
     log.debug(`✅ migrateJob completed successfully for ${job.id}:`, result);
     return result;
   } catch (error) {
@@ -66,262 +69,356 @@ export async function migrateJob(job, log) {
   }
 }
 
-/**
- * Migrate a single file job
- */
-async function migrateJobFile(job, log) {
-  const file = job.sourcePath;
-  const base = job.displayName;
-  
-  if (!isAudio(file)) {
-    throw new Error(`Skipping non-audio file: "${base}"`);
-  }
+/** Build, plan, and execute one job's unit (D1) */
+async function migrateUnit(job, log) {
+  const unit = await buildUnit(job, log);
+  const plan = await planUnit(unit, log);
+  return executePlan(plan, { dryRun: DRY_RUN(), log });
+}
 
-  log.debug(`🚀 Starting file migration: ${file}`);
-  
-  // Verify source file exists and get stats
-  if (!(await fs.pathExists(file))) {
-    throw new Error(`Source file does not exist: ${file}`);
-  }
-  
-  const sourceStats = await fs.stat(file);
-  log.debug(`📊 Source file size: ${sourceStats.size} bytes`);
+// ---------------------------------------------------------------------------
+// Unit building
 
-  // Extract metadata from audio file
-  const fileMetadata = await extractAudioMetadata(file, log);
-  if (fileMetadata?.hasMetadata) {
-    log.info(`🎵 File metadata: Author: "${fileMetadata.author || 'N/A'}", Title: "${fileMetadata.title || 'N/A'}", Year: "${fileMetadata.year || 'N/A'}"`);
+/** Loose files directly in SOURCE_DIR (and top-level directories) have no useful parent */
+function contextParent(p) {
+  const parent = path.dirname(p);
+  return path.resolve(parent) === path.resolve(SOURCE_DIR()) ? null : parent;
+}
+
+function logMetadata(label, metadata, log) {
+  if (metadata?.hasMetadata) {
+    log.info(`${label}: Author: "${metadata.author || 'N/A'}", Title: "${metadata.title || 'N/A'}", Year: "${metadata.year || 'N/A'}"`);
   } else {
     log.debug(`🔍 No embedded metadata found, using heuristics`);
-  }
-
-  const heuristics = heuristicsFromName(base, path.dirname(file));
-  // Loose files directly in SOURCE_DIR have no useful parent
-  const parent = path.dirname(file);
-  const parentDir = path.resolve(parent) === path.resolve(SOURCE_DIR()) ? null : parent;
-  const meta = (await normalizeViaAI(base, heuristics.author, heuristics.title, log, parentDir, fileMetadata)) || {};
-  const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: path.parse(base).name, log });
-  
-  const destDirRoot = DEST_DIR();
-  const bookDir = path.join(destDirRoot, author, title);
-  const target = path.join(bookDir, base);
-  
-  log.debug(`📁 Target directory: ${bookDir}`);
-  log.debug(`📋 Target file: ${target}`);
-  
-  try {
-    // Check if destination root exists and is writable
-    if (!(await fs.pathExists(destDirRoot))) {
-      throw new Error(`Destination root directory does not exist: ${destDirRoot}`);
-    }
-    
-    const destRootStats = await fs.stat(destDirRoot);
-    log.debug(`📊 Dest root stats - mode: ${destRootStats.mode.toString(8)}, uid: ${destRootStats.uid}, gid: ${destRootStats.gid}`);
-    
-    // Try to create a test file to verify write permissions
-    const testFile = path.join(destDirRoot, '.write-test-' + Date.now());
-    try {
-      await fs.writeFile(testFile, 'test');
-      await fs.remove(testFile);
-      log.debug(`✅ Write permission verified for ${destDirRoot}`);
-    } catch (writeTestError) {
-      throw new Error(`Cannot write to destination directory ${destDirRoot}: ${writeTestError.message}`);
-    }
-    
-    // Create the book directory
-    log.debug(`📁 Creating directory: ${bookDir}`);
-    await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
-    
-    // Verify directory was created
-    if (!(await fs.pathExists(bookDir))) {
-      throw new Error(`Failed to create directory: ${bookDir}`);
-    }
-    log.info(`📂 Directory created successfully: ${bookDir}`);
-
-    // Copy the file with its original name - no renaming
-    log.debug(`📋 Copying file from ${file} to ${target}`);
-    
-    // Try using Node.js built-in copyFile which might be more reliable in CI
-    try {
-      await fsPromises.copyFile(file, target);
-    } catch (copyError) {
-      log.error(`❌ Native copyFile failed: ${copyError.message}, trying fs-extra...`);
-      await fs.copy(file, target, { overwrite: true });
-    }
-    
-    // Small delay to ensure file system operations complete
-    await new Promise(resolve => setTimeout(resolve, 10));
-    
-    // Verify the copy was successful
-    if (!(await fs.pathExists(target))) {
-      throw new Error(`Target file was not created: ${target}`);
-    }
-    
-    const targetStats = await fs.stat(target);
-    log.debug(`📊 Target file size: ${targetStats.size} bytes`);
-    
-    if (sourceStats.size !== targetStats.size) {
-      throw new Error(`File copy verification failed: size mismatch (source: ${sourceStats.size}, target: ${targetStats.size})`);
-    }
-    log.debug(`✅ File copy verified: ${sourceStats.size} bytes`);
-    
-    await applyPerms(bookDir);
-    
-    // Only remove source after successful copy and verification
-    await fs.remove(file);
-    log.info(`🎉 Migrated: "${base}" → "${author} / ${title}"` );
-    
-    return { author, title, files: 1 };
-  } catch (error) {
-    log.error(`❌ Migration failed for "${base}": ${error.message}`);
-    log.error(`❌ Error stack: ${error.stack}`);
-    
-    // Additional debugging info
-    try {
-      const uid = typeof process.getuid === 'function' ? process.getuid() : 'unknown';
-      const gid = typeof process.getgid === 'function' ? process.getgid() : 'unknown';
-      log.error(`📊 Current process - uid: ${uid}, gid: ${gid}`);
-      log.error(`📊 Source exists: ${await fs.pathExists(file)}`);
-      log.error(`📊 Dest root exists: ${await fs.pathExists(destDirRoot)}`);
-      log.error(`📊 Book dir exists: ${await fs.pathExists(bookDir)}`);
-      log.error(`📊 Target exists: ${await fs.pathExists(target)}`);
-    } catch (debugError) {
-      log.error(`❌ Failed to gather debug info: ${debugError.message}`);
-    }
-    
-    throw error;
   }
 }
 
 /**
- * Migrate a directory job
+ * Describe a job's source as a migration unit (D1): its supported files with kind, read-aloud flag,
+ * size, and metadata, plus the normalized author/title.
+ * @returns {Promise<{ job, type, sourcePath, displayName, parentDir, author, title, formats: string[],
+ *   metadata: Object|null, files: Array<{ path, name, kind, readaloud, size, metadata }> }>}
  */
-async function migrateJobDirectory(job, log) {
-  const dir = job.sourcePath;
+export async function buildUnit(job, log) {
+  const source = job.sourcePath;
   const base = job.displayName;
+  let files;
+  let metadata;
+  let heuristics;
+  let fallbackTitle;
 
-  log.debug(`🚀 Starting directory migration: ${dir}`);
-
-  // Copy only audio files from this directory (non-recursive)
-  const entries = await fs.readdir(dir, { withFileTypes: true });
-  let copiedFiles = 0;
-  const audioFiles = [];
-  
-  // First, collect all audio files in this directory
-  for (const e of entries) {
-    const src = path.join(dir, e.name);
-    if (e.isDirectory()) continue;
-    if (!isAudio(src)) continue;
-    audioFiles.push({ src, name: e.name });
-  }
-
-  log.debug(`📊 Found ${audioFiles.length} audio files in directory`);
-
-  // If this directory has no audio files, don't process it as a book
-  if (audioFiles.length === 0) {
-    throw new SkipError(`Skipping directory with no audio files: "${base}"`, 'no-audio-files');
-  }
-
-  // Extract metadata from directory (prefers .m4b files)
-  const dirMetadata = await extractDirectoryMetadata(dir, log);
-  if (dirMetadata?.hasMetadata) {
-    log.info(`🎵 Directory metadata: Author: "${dirMetadata.author || 'N/A'}", Title: "${dirMetadata.title || 'N/A'}", Year: "${dirMetadata.year || 'N/A'}"`);
+  if (job.type === JobType.FILE) {
+    if (!isSupportedBook(source)) {
+      throw new Error(`Skipping non-audio file: "${base}"`);
+    }
+    log.debug(`🚀 Starting file migration: ${source}`);
+    if (!(await fs.pathExists(source))) {
+      throw new Error(`Source file does not exist: ${source}`);
+    }
+    const kind = bookFileKind(source);
+    metadata = kind === 'epub' ? await extractEpubMetadata(source, log) : await extractAudioMetadata(source, log);
+    logMetadata(kind === 'epub' ? '📖 File metadata' : '🎵 File metadata', metadata, log);
+    files = [{ path: source, name: base, kind, readaloud: !!metadata?.readaloud, metadata: metadata || null }];
+    heuristics = heuristicsFromName(base, path.dirname(source));
+    fallbackTitle = path.parse(base).name;
   } else {
-    log.debug(`🔍 No embedded metadata found, using heuristics`);
+    log.debug(`🚀 Starting directory migration: ${source}`);
+    // Direct supported files only (non-recursive)
+    const entries = await fs.readdir(source, { withFileTypes: true });
+    const paths = entries
+      .filter(e => !e.isDirectory() && isSupportedBook(e.name))
+      .map(e => path.join(source, e.name))
+      .sort();
+    log.debug(`📊 Found ${paths.length} book files in directory`);
+    if (paths.length === 0) {
+      throw new SkipError(`Skipping directory with no audio files: "${base}"`, 'no-audio-files');
+    }
+    metadata = await extractDirectoryMetadata(source, log);
+    logMetadata('🎵 Directory metadata', metadata, log);
+    const described = new Map((metadata?.files || []).map(f => [path.resolve(f.path), f]));
+    files = paths.map(p => {
+      const d = described.get(path.resolve(p));
+      return { path: p, name: path.basename(p), kind: bookFileKind(p), readaloud: !!d?.readaloud, metadata: d?.metadata || null };
+    });
+    heuristics = heuristicsFromName(base, null);
+    fallbackTitle = base;
   }
 
-  const heuristics = heuristicsFromName(base, null);
-  // Nested directories may sit under an author folder; top-level ones have no useful parent
-  const parent = path.dirname(dir);
-  const parentDir = path.resolve(parent) === path.resolve(SOURCE_DIR()) ? null : parent;
-  const meta = (await normalizeViaAI(base, heuristics.author, heuristics.title, log, parentDir, dirMetadata)) || {};
-  const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: base, log });
-  
-  const destDirRoot = DEST_DIR();
-  const bookDir = path.join(destDirRoot, author, title);
-  
-  log.debug(`📁 Target directory: ${bookDir}`);
-  
+  for (const file of files) file.size = (await fs.stat(file.path)).size;
+  const formats = [...new Set(files.map(f => f.kind))];
+  const parentDir = contextParent(source);
+  const meta = (await normalizeViaAI(base, heuristics.author, heuristics.title, log, parentDir, metadata, formats)) || {};
+  const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle, log });
+
+  return { job, type: job.type, sourcePath: source, displayName: base, parentDir, author, title, formats, metadata: metadata || null, files };
+}
+
+// ---------------------------------------------------------------------------
+// Planning
+
+/** Streaming SHA-256 of a file */
+async function sha256(file) {
+  const hash = crypto.createHash('sha256');
+  await pipeline(fs.createReadStream(file), hash);
+  return hash.digest('hex');
+}
+
+/** Same size, then same SHA-256 (hashing only when sizes match) */
+export async function filesIdentical(a, b) {
+  const [sa, sb] = await Promise.all([fs.stat(a), fs.stat(b)]);
+  if (!sa.isFile() || !sb.isFile() || sa.size !== sb.size) return false;
+  const [ha, hb] = await Promise.all([sha256(a), sha256(b)]);
+  return ha === hb;
+}
+
+async function listNames(dir) {
   try {
-    // Check destination permissions
-    if (!(await fs.pathExists(destDirRoot))) {
-      throw new Error(`Destination root directory does not exist: ${destDirRoot}`);
-    }
-    
-    const destRootStats = await fs.stat(destDirRoot);
-    log.debug(`📊 Dest root stats - mode: ${destRootStats.mode.toString(8)}, uid: ${destRootStats.uid}, gid: ${destRootStats.gid}`);
-    
-    // Create the book directory
-    log.debug(`📁 Creating directory: ${bookDir}`);
-    await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
-    
-    // Verify directory was created
-    if (!(await fs.pathExists(bookDir))) {
-      throw new Error(`Failed to create directory: ${bookDir}`);
-    }
-    log.info(`📂 Directory created successfully: ${bookDir}`);
-
-    // Copy the audio files with verification
-    for (const { src, name } of audioFiles) {
-      const target = path.join(bookDir, name);
-      log.debug(`📋 Copying file from ${src} to ${target}`);
-      
-      const sourceStats = await fs.stat(src);
-      
-      // Try using Node.js built-in copyFile which might be more reliable in CI
-      try {
-        await fsPromises.copyFile(src, target);
-      } catch (copyError) {
-        log.error(`❌ Native copyFile failed for ${name}: ${copyError.message}, trying fs-extra...`);
-        await fs.copy(src, target, { overwrite: true });
-      }
-      
-      // Small delay to ensure file system operations complete
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
-      // Verify each file copy
-      if (!(await fs.pathExists(target))) {
-        throw new Error(`Target file was not created: ${target}`);
-      }
-      
-      const targetStats = await fs.stat(target);
-      
-      if (sourceStats.size !== targetStats.size) {
-        throw new Error(`File copy verification failed for "${name}": size mismatch (source: ${sourceStats.size}, target: ${targetStats.size})`);
-      }
-      log.debug(`✅ File copy verified: ${name} (${sourceStats.size} bytes)`);
-      copiedFiles++;
-    }
-
-    await applyPerms(bookDir);
-    
-    // Only remove source directory after all files are successfully copied and verified
-    await fs.remove(dir);
-    
-    // Clean up any empty parent directories that might have been left behind
-    await cleanupEmptyParentDirectories(dir, log);
-    
-    log.info(`🎉 Migrated directory: "${base}" → "${author} / ${title}" (${copiedFiles} files)`);
-    
-    return { author, title, files: copiedFiles };
+    return (await fs.readdir(dir)).filter(name => !name.startsWith(PARTIAL_PREFIX));
   } catch (error) {
-    log.error(`❌ Directory migration failed for "${base}": ${error.message}`);
-    log.error(`❌ Error stack: ${error.stack}`);
-    
-    // Additional debugging info
-    try {
-      const uid = typeof process.getuid === 'function' ? process.getuid() : 'unknown';
-      const gid = typeof process.getgid === 'function' ? process.getgid() : 'unknown';
-      log.error(`📊 Current process - uid: ${uid}, gid: ${gid}`);
-      log.error(`📊 Source dir exists: ${await fs.pathExists(dir)}`);
-      log.error(`📊 Dest root exists: ${await fs.pathExists(destDirRoot)}`);
-      log.error(`📊 Book dir exists: ${await fs.pathExists(bookDir)}`);
-    } catch (debugError) {
-      log.error(`❌ Failed to gather debug info: ${debugError.message}`);
-    }
-    
+    if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return [];
     throw error;
   }
+}
+
+/** Names of read-aloud EPUBs already in the book folder; read only when a read-aloud file arrives */
+async function existingReadaloudNames(bookDir, names, unit, log) {
+  if (!unit.files.some(f => f.kind === 'epub' && f.readaloud)) return [];
+  const readaloud = [];
+  for (const name of names.filter(n => bookFileKind(n) === 'epub')) {
+    const metadata = await extractEpubMetadata(path.join(bookDir, name), log);
+    if (metadata?.readaloud) readaloud.push(name);
+  }
+  return readaloud;
+}
+
+/**
+ * Plan a unit (D1, D7): match it against the library, choose the book folder (an existing
+ * folder's names win), name each file through the layout, and classify each destination as
+ * `copy`, `skip-identical`, or a conflict. Reads the filesystem but never writes.
+ * @returns {Promise<{ outcome: 'place'|'quarantine', unit, bookDir: string|null, match,
+ *   actions: Array<{ src, dest, op: 'copy'|'skip-identical', renamed: boolean }>,
+ *   conflicts: Array<{ src, dest, why }>, reason: string|null, explanation: string, paths: string[] }>}
+ */
+export async function planUnit(unit, log) {
+  const candidates = await findCandidates(unit, log);
+  const match = await resolveMatch(unit, candidates, log);
+  const base = { unit, match, actions: [], conflicts: [] };
+
+  if (match.outcome === 'ambiguous') {
+    return {
+      ...base, outcome: 'quarantine', bookDir: null, reason: 'ambiguous',
+      explanation: `${match.reason} (${match.signal})`,
+      paths: match.candidates.map(c => c.path)
+    };
+  }
+
+  const layout = getLayout();
+  const bookDir = match.candidate ? match.candidate.path : layout.bookDir(DEST_DIR(), unit.author, unit.title);
+  const bookTitle = match.candidate ? match.candidate.title : path.basename(bookDir);
+  const existing = await listNames(bookDir);
+  const readaloudNames = await existingReadaloudNames(bookDir, existing, unit, log);
+  const planned = [];
+
+  // Originals before read-aloud EPUBs, so a same-named read-aloud sees the original it collides with
+  const ordered = [...unit.files].sort((a, b) => Number(a.readaloud) - Number(b.readaloud) || a.name.localeCompare(b.name));
+  for (const file of ordered) {
+    const name = layout.fileName(file, { title: bookTitle, existingNames: [...existing, ...planned], readaloudNames });
+    const dest = path.join(bookDir, name);
+    const renamed = name !== file.name;
+    if (planned.some(n => n.toLowerCase() === name.toLowerCase())) {
+      base.conflicts.push({ src: file.path, dest, why: 'another file in the unit has the same destination name' });
+    } else if (await fs.pathExists(dest)) {
+      if (await filesIdentical(file.path, dest)) {
+        base.actions.push({ src: file.path, dest, op: 'skip-identical', renamed });
+      } else {
+        base.conflicts.push({ src: file.path, dest, why: 'a different file already exists at the destination' });
+      }
+    } else {
+      base.actions.push({ src: file.path, dest, op: 'copy', renamed });
+    }
+    planned.push(name);
+    if (file.kind === 'epub' && file.readaloud) readaloudNames.push(name);
+  }
+
+  if (base.conflicts.length) {
+    return {
+      ...base, outcome: 'quarantine', bookDir, reason: 'conflict',
+      explanation: base.conflicts.map(c => `${path.basename(c.src)} → ${path.relative(DEST_DIR(), c.dest)}: ${c.why}`).join('; '),
+      paths: [...new Set(base.conflicts.map(c => c.dest))]
+    };
+  }
+  return { ...base, outcome: 'place', bookDir, reason: null, explanation: match.reason, paths: [bookDir] };
+}
+
+// ---------------------------------------------------------------------------
+// Execution
+
+function describeAction(action) {
+  const from = path.basename(action.src);
+  const to = path.basename(action.dest);
+  const verb = action.op === 'copy' ? 'copied' : 'skipped identical';
+  return `${verb}: "${from}"${action.renamed ? ` → "${to}" (renamed by layout)` : ''}`;
+}
+
+/**
+ * Perform (or, with dryRun, only log) a plan (D7, D8). Placement stages each copy to
+ * `.dewey-partial-<jobId>-<name>`, verifies its size, renames it into place without clobbering,
+ * and removes the unit's sources only after every action succeeded. On failure the current
+ * partial is deleted, files already renamed stay (they resolve as skip-identical on reprocessing),
+ * and the sources stay. Quarantine moves the source to REVIEW_DIR.
+ * @returns {Promise<Object>} `{ author, title, files }` when placed; `{ outcome: 'quarantined', reason,
+ *   reviewPath, files }` when quarantined; `dryRun: true` is added in dry-run mode
+ */
+export async function executePlan(plan, { dryRun = false, log } = {}) {
+  if (plan.outcome === 'quarantine') return quarantine(plan, { dryRun, log });
+
+  const { unit, bookDir, actions } = plan;
+  const prefix = dryRun ? `${DRY} would place` : '📂 Placing';
+  const author = path.basename(path.dirname(bookDir));
+  const title = path.basename(bookDir);
+  log.info(`${prefix} "${unit.displayName}" in ${bookDir}`);
+
+  if (dryRun) {
+    if (!(await fs.pathExists(bookDir))) log.info(`${DRY} would create folder ${bookDir}`);
+    for (const action of actions) {
+      log.info(`${DRY} would have ${describeAction(action)}${action.op === 'copy' ? ` into ${bookDir}` : ''}`);
+    }
+    log.info(`${DRY} would remove source "${unit.sourcePath}"`);
+    log.info(`${DRY} outcome: would place "${unit.displayName}" → "${author} / ${title}" (${actions.length} files)`);
+    return { author, title, files: actions.length, dryRun: true };
+  }
+
+  const destDirRoot = DEST_DIR();
+  if (!(await fs.pathExists(destDirRoot))) {
+    throw new Error(`Destination root directory does not exist: ${destDirRoot}`);
+  }
+  // Verify write permission before touching anything
+  const testFile = path.join(destDirRoot, '.write-test-' + Date.now());
+  try {
+    await fs.writeFile(testFile, 'test');
+    await fs.remove(testFile);
+  } catch (writeTestError) {
+    throw new Error(`Cannot write to destination directory ${destDirRoot}: ${writeTestError.message}`);
+  }
+
+  const placed = [];
+  let partial = null;
+  try {
+    await fs.ensureDir(bookDir, { mode: parseInt(DIR_MODE(), 8) });
+    for (const action of actions) {
+      if (action.op === 'copy') {
+        partial = path.join(bookDir, `${PARTIAL_PREFIX}${unit.job.id}-${path.basename(action.dest)}`);
+        // A partial with our own job-scoped name can only be a leftover of this unit
+        await fs.remove(partial);
+        await fsPromises.copyFile(action.src, partial, fsConstants.COPYFILE_EXCL);
+        const [sourceStats, partialStats] = await Promise.all([fs.stat(action.src), fs.stat(partial)]);
+        if (sourceStats.size !== partialStats.size) {
+          throw new Error(`File copy verification failed for "${path.basename(action.src)}": size mismatch (source: ${sourceStats.size}, target: ${partialStats.size})`);
+        }
+        if (await fs.pathExists(action.dest)) {
+          throw new Error(`Destination appeared during copy, refusing to overwrite: ${action.dest}`);
+        }
+        await fs.rename(partial, action.dest);
+        partial = null;
+        placed.push(action.dest);
+      }
+      log.info(`📄 ${describeAction(action)}`);
+    }
+  } catch (error) {
+    if (partial) await fs.remove(partial).catch(() => {});
+    log.error(`❌ Migration failed for "${unit.displayName}": ${error.message}`);
+    throw error;
+  }
+
+  await applyPerms(bookDir, placed);
+
+  // Only remove sources after every action succeeded
+  await fs.remove(unit.sourcePath);
+  if (unit.type === JobType.DIRECTORY) {
+    await cleanupEmptyParentDirectories(unit.sourcePath, log);
+  }
+  log.info(`🎉 Migrated: "${unit.displayName}" → "${author} / ${title}" (${placed.length} copied, ${actions.length - placed.length} identical)`);
+  return { author, title, files: actions.length };
+}
+
+function reviewStamp(date) {
+  return date.toISOString().replace(/\D/g, '').slice(0, 14);
+}
+
+/** REVIEW_DIR/<timestamp>-<displayName>, with -2, -3, … appended when taken */
+async function uniqueReviewFolder(root, name) {
+  let candidate = path.join(root, name);
+  for (let n = 2; await fs.pathExists(candidate); n++) candidate = path.join(root, `${name}-${n}`);
+  return candidate;
+}
+
+/** Move the unit's source under REVIEW_DIR and record why (D8); never deletes a file */
+async function quarantine(plan, { dryRun, log }) {
+  const { unit, reason, explanation, paths } = plan;
+  const now = new Date();
+  const root = REVIEW_DIR();
+  const folder = await uniqueReviewFolder(root, `${reviewStamp(now)}-${unit.displayName}`);
+  const relative = isPathWithin(unit.sourcePath, SOURCE_DIR()) && !isWithinReviewDir(unit.sourcePath)
+    ? path.relative(path.resolve(SOURCE_DIR()), unit.sourcePath)
+    : path.basename(unit.sourcePath);
+  const target = path.join(folder, relative || path.basename(unit.sourcePath));
+
+  for (const c of plan.conflicts) {
+    log.info(`⚠️  conflicting: "${path.basename(c.src)}" → ${c.dest} (${c.why})`);
+  }
+
+  if (dryRun) {
+    log.info(`${DRY} would quarantine "${unit.displayName}" (${reason}: ${explanation}) to ${folder}`);
+    log.info(`${DRY} outcome: would quarantine "${unit.displayName}"`);
+    return { outcome: 'quarantined', reason, reviewPath: folder, files: unit.files.length, dryRun: true };
+  }
+
+  await fs.ensureDir(path.dirname(target));
+  await fs.move(unit.sourcePath, target);
+  await fs.writeJson(path.join(folder, REVIEW_FILE), {
+    reason, explanation, paths, timestamp: now.toISOString()
+  }, { spaces: 2 });
+  if (unit.type === JobType.DIRECTORY) {
+    await cleanupEmptyParentDirectories(unit.sourcePath, log);
+  }
+  log.warn(`🚧 Quarantined "${unit.displayName}" (${reason}): ${explanation} → ${folder}`);
+  log.info(`📦 Outcome: quarantined "${unit.displayName}" for review in ${folder}`);
+  return { outcome: 'quarantined', reason, reviewPath: folder, files: unit.files.length };
+}
+
+/**
+ * Remove stale `.dewey-partial-*` staging files left by an interrupted run (D7). Walks the
+ * library up to depth 3 (DEST_DIR/Author/Title/file); real files are never touched.
+ * @returns {Promise<string[]>} Removed (or, with dryRun, removable) paths
+ */
+export async function sweepStalePartials(log, { root = DEST_DIR(), dryRun = DRY_RUN() } = {}) {
+  const found = [];
+  async function walk(dir, depth) {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (depth < 3) await walk(full, depth + 1);
+      } else if (entry.name.startsWith(PARTIAL_PREFIX)) {
+        found.push(full);
+      }
+    }
+  }
+  await walk(root, 1);
+  for (const file of found) {
+    if (dryRun) {
+      log.info(`${DRY} would remove stale partial file ${file}`);
+    } else {
+      await fs.remove(file);
+      log.info(`🧹 Removed stale partial file ${file}`);
+    }
+  }
+  return found;
 }
 
 // Recursively discover all migration units (directories with supported book files or loose book files)
@@ -357,7 +454,7 @@ export async function discoverMigrationUnits(rootDir) {
         }
         return;
       }
-      
+
       // For non-root directories: if this directory contains book files, treat it as a migration unit
       if (bookFiles.length > 0) {
         units.push({ type: 'directory', path: currentDir });
@@ -375,10 +472,10 @@ export async function discoverMigrationUnits(rootDir) {
       console.warn(`Warning: Could not read directory ${currentDir}: ${error.message}`);
     }
   }
-  
+
   // Start traversal from root, marking it as the root directory
   await traverse(rootDir, true);
-  
+
   return units;
 }
 
@@ -386,7 +483,7 @@ export async function discoverMigrationUnits(rootDir) {
 async function cleanupEmptyParentDirectories(removedDir, log) {
   const sourceDir = path.resolve(SOURCE_DIR());
   let currentDir = path.dirname(removedDir);
-  
+
   // Walk up the directory tree and remove empty directories
   while (currentDir !== sourceDir && currentDir !== path.dirname(currentDir)) {
     try {
@@ -410,13 +507,13 @@ async function cleanupEmptyParentDirectories(removedDir, log) {
 export async function cleanupEmptyDirectories(rootDir, log, preserveRoot = null) {
   try {
     const entries = await fs.readdir(rootDir, { withFileTypes: true });
-    
+
     // First, recursively clean up subdirectories
     for (const entry of entries) {
       if (entry.isDirectory()) {
         const subDir = path.join(rootDir, entry.name);
         await cleanupEmptyDirectories(subDir, log, preserveRoot);
-        
+
         // After cleaning subdirectory, check if it's now empty
         // but don't delete if it's the preserved root directory
         try {
@@ -439,20 +536,18 @@ async function migrateFileAsDir(file, log) {
   const { Job } = await import('./job.js');
   const job = await Job.fromPath(file);
   const jobLog = job.createLogger(log);
-  
-  return await migrateJobFile(job, jobLog);
+
+  return await migrateUnit(job, jobLog);
 }
 
 async function migrateDir(dir, log) {
-  const base = path.basename(dir);
-  
   // Special handling for the root SOURCE_DIR - process its contents instead of treating it as a book
   const resolvedSourceDir = path.resolve(SOURCE_DIR());
   const resolvedDir = path.resolve(dir);
   if (resolvedDir === resolvedSourceDir) {
     // Batch discovery: find all migration units (directories with audio or loose audio files) upfront
     const migrationUnits = await discoverMigrationUnits(dir);
-    
+
     // Process each unit atomically - no more race conditions
     for (const unit of migrationUnits) {
       if (unit.type === 'directory') {
@@ -464,10 +559,10 @@ async function migrateDir(dir, log) {
         }
       }
     }
-    
+
     // Clean up any empty directories left behind after processing
-    // but NEVER delete the root source directory itself
-    await cleanupEmptyDirectories(dir, log, dir);
+    // but NEVER delete the root source directory itself; dry runs change nothing
+    if (!DRY_RUN()) await cleanupEmptyDirectories(dir, log, dir);
     return;
   }
 
@@ -475,52 +570,22 @@ async function migrateDir(dir, log) {
   const { Job } = await import('./job.js');
   const job = await Job.fromPath(dir);
   const jobLog = job.createLogger(log);
-  
-  return await migrateJobDirectory(job, jobLog);
+
+  return await migrateUnit(job, jobLog);
 }
 
-async function applyPerms(target) {
-  try {
-    // Apply ownership and permissions to the directory
-    try { 
-      await fs.chown(target, PUID(), PGID()); 
-    } catch (chownError) {
-      // Ownership changes might fail in containers or restricted environments
-      // This is non-fatal, so we continue
+/** Ownership and modes for the book folder and the files this unit placed */
+async function applyPerms(dir, files) {
+  for (const [p, mode] of [[dir, DIR_MODE()], ...files.map(f => [f, FILE_MODE()])]) {
+    try {
+      await fs.chmod(p, parseInt(mode, 8));
+    } catch {
+      // Permission changes might fail in restricted environments; non-fatal
     }
-    
-    try { 
-      await fs.chmod(target, parseInt(DIR_MODE(), 8)); 
-    } catch (chmodError) {
-      // Permission changes might fail in restricted environments
-      // This is non-fatal, so we continue
+    try {
+      await fs.chown(p, PUID(), PGID());
+    } catch {
+      // Ownership changes might fail in containers; non-fatal
     }
-    
-    // Apply permissions to all files in the directory
-    const names = await fs.readdir(target).catch(() => []);
-    for (const name of names) {
-      const p = path.join(target, name);
-      try {
-        const s = await fs.stat(p);
-        if (s.isDirectory()) {
-          await fs.chmod(p, parseInt(DIR_MODE(), 8));
-        } else {
-          await fs.chmod(p, parseInt(FILE_MODE(), 8));
-        }
-        try { 
-          await fs.chown(p, PUID(), PGID()); 
-        } catch (chownError) {
-          // Ownership changes might fail, but this is non-fatal
-        }
-      } catch (statError) {
-        // File might have been deleted or is inaccessible, skip it
-      }
-    }
-  } catch (error) {
-    // Don't let permission failures break the migration
-    // but log them for debugging
-    console.warn(`Warning: Failed to apply permissions to ${target}: ${error.message}`);
   }
 }
-
-
