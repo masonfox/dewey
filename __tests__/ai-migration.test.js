@@ -53,3 +53,20 @@ test.each([JobType.FILE, JobType.DIRECTORY])('%s migration retains heuristics af
   expect(fetch).toHaveBeenCalledOnce();
   expect(JSON.stringify(log.warn.mock.calls)).not.toContain('rejected-secret');
 });
+
+test.each([
+  ['nested', ['Parent Author', 'Nested Book'], 'PARENT_DIR: Parent Author'],
+  ['top-level', ['Top Level Book'], null],
+])('%s directory migration sends parent directory context to AI', async (_, segments, expected) => {
+  const source = path.join(process.env.SOURCE_DIR, ...segments);
+  await fs.ensureDir(source);
+  await fs.writeFile(path.join(source, '01.mp3'), 'audio bytes');
+  extractDirectoryMetadata.mockResolvedValue({ hasMetadata: false });
+  const fetch = vi.fn(async () => Response.json({ id: 'chat_test', object: 'chat.completion', created: 1, model: 'selected-migration-model',
+    choices: [{ index: 0, message: { role: 'assistant', content: '{"author":"AI Author","title":"AI Title"}' }, finish_reason: 'stop' }] }));
+  vi.stubGlobal('fetch', fetch);
+  await migrateJob(new Job(source, JobType.DIRECTORY), log);
+  const prompt = JSON.stringify(JSON.parse(fetch.mock.calls[0][1].body).messages);
+  if (expected) expect(prompt).toContain(expected);
+  else expect(prompt).not.toContain('PARENT_DIR');
+});

@@ -228,7 +228,10 @@ async function migrateJobDirectory(job, log) {
   }
 
   const heuristics = heuristicsFromName(base, null);
-  const meta = (await normalizeViaAI(base, heuristics.author, heuristics.title, log, dir, dirMetadata)) || {};
+  // Nested directories may sit under an author folder; top-level ones have no useful parent
+  const parent = path.dirname(dir);
+  const parentDir = path.resolve(parent) === path.resolve(SOURCE_DIR()) ? null : parent;
+  const meta = (await normalizeViaAI(base, heuristics.author, heuristics.title, log, parentDir, dirMetadata)) || {};
   const { author, title } = getCanonicalAuthorTitle({ meta, heuristics, fallbackTitle: base, log });
   
   const destDirRoot = DEST_DIR();
