@@ -41,17 +41,17 @@
 
 ## 7. Acceptance and regression tests
 
-- [ ] 7.1 Add an end-to-end test: `Dune.epub` ingested into a library containing `Frank Herbert/Dune/Dune.m4b` ends with both files in that folder (acceptance 1)
-- [ ] 7.2 Add an order-independence test: EPUB-first and audiobook-first runs into empty libraries produce identical directory trees under both layouts (acceptance 2)
-- [ ] 7.3 Add a simultaneous-arrival test: loose `Dune.epub` and `Dune.m4b` enqueued together through `JobQueue` produce one book folder. This pins the reliance on serial processing (D4)
-- [ ] 7.4 Add a reprocessing idempotency test: ingesting the same files twice yields no duplicates and no overwrites (acceptance 5)
-- [ ] 7.5 Add an ambiguity safety test: an ambiguous unit leaves `DEST_DIR` byte-for-byte unchanged and lands in `REVIEW_DIR` (acceptance 4)
-- [ ] 7.6 Add a read-aloud coexistence test: the original and read-aloud EPUBs both end up in the book folder under both layouts, including the same-filename case
-- [ ] 7.7 Run the full suite with `npm test` and confirm that all pre-existing audiobook tests pass without modification (acceptance 3)
+- [x] 7.1 Add an end-to-end test: `Dune.epub` ingested into a library containing `Frank Herbert/Dune/Dune.m4b` ends with both files in that folder (acceptance 1)
+- [x] 7.2 Add an order-independence test: EPUB-first and audiobook-first runs into empty libraries produce identical directory trees under both layouts (acceptance 2)
+- [x] 7.3 Add a simultaneous-arrival test: loose `Dune.epub` and `Dune.m4b` enqueued together through `JobQueue` produce one book folder. This pins the reliance on serial processing (D4)
+- [x] 7.4 Add a reprocessing idempotency test: ingesting the same files twice yields no duplicates and no overwrites (acceptance 5)
+- [x] 7.5 Add an ambiguity safety test: an ambiguous unit leaves `DEST_DIR` byte-for-byte unchanged and lands in `REVIEW_DIR` (acceptance 4)
+- [x] 7.6 Add a read-aloud coexistence test: the original and read-aloud EPUBs both end up in the book folder under both layouts, including the same-filename case
+- [x] 7.7 Run the full suite with `npm test` and confirm that all pre-existing audiobook tests pass without modification (acceptance 3)
 
 ## 8. Documentation and deployment
 
-- [ ] 8.1 Update `.env.example` with `LIBRARY_LAYOUT`, `REVIEW_DIR`, `DRY_RUN`, and `INGEST_EBOOKS`, documented in the existing comment style. Verify by review against D9 defaults
+- [x] 8.1 Update `.env.example` with `LIBRARY_LAYOUT`, `REVIEW_DIR`, `DRY_RUN`, and `INGEST_EBOOKS`, documented in the existing comment style. Verify by review against D9 defaults
 - [ ] 8.2 Add the new variables to the Dockerfile `ENV` block (leaving `REVIEW_DIR` unset so it derives from `SOURCE_DIR`), then verify `docker build -t dewey .` succeeds
-- [ ] 8.3 Update README: supported formats, layouts with example trees, matching rules, review quarantine, dry-run rollout recipe, and the overwrite→quarantine behavior change. Update CLAUDE.md's architecture notes for the plan/execute split and the new modules. Verify that README examples match the spec scenarios
+- [x] 8.3 Update README: supported formats, layouts with example trees, matching rules, review quarantine, dry-run rollout recipe, and the overwrite→quarantine behavior change. Update CLAUDE.md's architecture notes for the plan/execute split and the new modules. Verify that README examples match the spec scenarios
 - [ ] 8.4 Manually verify against a running Book Orbit instance (book_per_folder library) that a placed `Author/Title/` folder with audio, EPUB, and read-aloud EPUB appears as one book with multiple formats. Also check the ebook-only `<Title>.epub` + `<Title> (readaloud).epub` case flagged in design Risks, and record the result in the change folder (acceptance 6)
