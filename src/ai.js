@@ -226,7 +226,7 @@ export async function validateAI(log) {
   try {
     const result = await request(config, 'Return JSON {"ok": true} only.', 10000, 16);
     if (refused(result) || !result.text?.trim()) throw new Error('No probe text');
-    log.info(`AI ${label(config)} validation successful`);
+    log.info(`🤖 AI ${label(config)} validation successful`);
     return true;
   } catch (error) {
     log.warn(`AI ${label(config)} startup validation failed (${failure(error).category}); using heuristics`);
