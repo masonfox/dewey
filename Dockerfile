@@ -16,6 +16,9 @@ ENV SOURCE_DIR=/data/incoming \
     PGID=0 \
     FILE_MODE=664 \
     DIR_MODE=775 \
+    LIBRARY_LAYOUT=audiobookshelf \
+    DRY_RUN=false \
+    INGEST_EBOOKS=true \
     TZ=UTC
 
 WORKDIR /app

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Dewey is an audiobook migration service that watches a source directory for incoming audiobook files (.mp3, .m4b) and automatically organizes them into a canonical library structure using Claude AI for intelligent metadata extraction. Files are organized into `[Author]/[Book Title]` directories with heuristic fallbacks when AI is unavailable.
+Dewey is a book migration service that watches a source directory for incoming audiobooks (.mp3, .m4b, .m4a) and EPUB ebooks (.epub, including read-aloud EPUBs with media overlays) and organizes them into a canonical library using embedded metadata and optional AI normalization. Every format of a book lands flat in one `[Author]/[Book Title]` folder; incoming units are matched against books already in the library, and uncertain or conflicting units are quarantined instead of written. Heuristics are the fallback when AI is unavailable.
 
 ## Development Commands
 
@@ -58,7 +58,8 @@ docker run -d \
 
 **Entry Point (src/index.js)**
 - Initializes the application and watcher
-- Sets up `chokidar` file watcher on SOURCE_DIR with stability checks
+- Sets up `chokidar` file watcher on SOURCE_DIR with stability checks, ignoring REVIEW_DIR
+- Sweeps stale `.dewey-partial-*` staging files from DEST_DIR at startup
 - Starts HTTP health check server on localhost:8080
 - Delegates all file events to the JobQueue
 
@@ -71,19 +72,40 @@ docker run -d \
   - Handles enqueueing, batching, and processing jobs
   - Prevents race conditions with directory grouping logic
   - Implements stability checking to ensure complete uploads
-  - Groups related files (multi-file audiobooks) into single directory jobs
+  - Groups related files (multi-file audiobooks, mixed audio + EPUB folders) into single directory jobs
+  - Processes jobs serially; cross-format matching depends on this
   - Automatically discovers migration units for root directory scans
 
 **Migration Logic (src/migrate.js)**
-- Core function: `migrateJob(job, log)` - processes Job objects
-- Determines metadata via Claude AI or heuristic fallbacks
-- Creates `DEST_DIR/[Author]/[Title]` structure
-- Copies audio files and applies configured permissions (PUID/PGID)
-- Removes source files after successful migration
+- Core function: `migrateJob(job, log)` - processes Job objects (file and directory jobs share one path)
+- Three stages:
+  - `buildUnit(job, log)` describes the source as a unit: supported files (`kind`, `readaloud`, `size`, per-file metadata), formats, and normalized author/title
+  - `planUnit(unit, log)` matches against the library, picks the book folder (an existing folder's names win), names files via the layout, and classifies each destination as `copy`, `skip-identical` (size + SHA-256), or a conflict. It reads but never writes. Returns `{ outcome: 'place'|'quarantine', bookDir, match, actions, conflicts, reason, explanation, paths }`
+  - `executePlan(plan, { dryRun, log })` performs or only logs the plan
+- Transfer: copy to `.dewey-partial-<jobId>-<name>` with `COPYFILE_EXCL`, verify size, no-clobber rename; sources removed only after every action succeeds
+- Any conflict or ambiguity quarantines the whole unit: `fs.move` to `REVIEW_DIR/<timestamp>-<name>/` plus `dewey-review.json` (`reason`, `explanation`, `paths`, `timestamp`); the job completes with `result.outcome === 'quarantined'` and is not retried
+- `sweepStalePartials(log)` removes leftover `.dewey-partial-*` files at startup
+- `DRY_RUN` logs every action with a `🧪 [dry-run]` marker and mutates nothing (including chown/chmod and quarantine)
 - Uses `SkipError` for non-error skips (distinguishes from actual failures)
 
-**Claude Integration (src/claude.js)**
-- Function: `normalizeViaClaude(name, fallbackAuthor, fallbackTitle, log, parentDir)`
+**Matching (src/matching.js)**
+- `authorKey`/`titleKey` normalize names (case, diacritics, punctuation, "Last, First", leading article, `TITLE_NOISE_WORDS`)
+- `findCandidates(unit, log)` reads `DEST_DIR` fresh per unit: same-author-key author folders, then book folders with supported files; OPF/audio-tag details load only for equal or near titles
+- `resolveMatch(unit, candidates, log)`: identifier (ISBN/ASIN) → equal keys → near match + `resolveMatchViaAI` → new book, else `ambiguous` (several equal candidates, abridged mismatch, differing languages, differing non-read-aloud EPUB ISBNs, unconfirmed near match). Logs exactly one `info` decision line
+- Never imports layout. No cache or index: correctness relies on the queue processing one job at a time
+
+**Layout (src/layout.js)**
+- Pure strategies `audiobookshelf` (original names; ` (readaloud)` suffix only when a read-aloud EPUB collides with the original) and `bookorbit` (`<Title>.epub`, `<Title> (readaloud).epub`; audio unchanged)
+- `getLayout()` resolves `LIBRARY_LAYOUT()`. Layout only names folders/files; it never affects matching
+
+**Metadata (src/metadata.js)**
+- `extractAudioMetadata`: ffprobe format tags, read case-insensitively, including `isbn`, `asin`, `language`
+- `extractEpubMetadata`: reads only `META-INF/container.xml` and the OPF from the ZIP (`yauzl` + `fast-xml-parser`, entry-size cap): title, author-role creator, language, identifiers (ISBN-10 → 13, ASIN, other), `readaloud` from media overlays. Unreadable EPUBs warn and return null
+- `extractUnitMetadata(files, log)`: primary author/title from .m4b → EPUB → .mp3/.m4a → read-aloud EPUB, plus merged identifiers/language; `extractDirectoryMetadata` wraps it
+
+**AI Integration (src/ai.js; src/claude.js is a legacy re-export)**
+- `normalizeViaAI(name, fallbackAuthor, fallbackTitle, log, parentDir, fileMetadata, formats)`; prompts are format-aware (ebook/audio, OPF metadata)
+- `resolveMatchViaAI(unit, candidates, log)` accepts only a high-confidence, same-edition single candidate; a high-confidence `null` means a new book; anything else is ambiguous. Shares the normalization pacing/retry budget
 - Extracts author and title from filenames using Claude API
 - Built-in rate limiting: 45 requests/min with automatic backoff
 - Exponential retry logic for transient failures
@@ -93,10 +115,12 @@ docker run -d \
 **Configuration (src/config.js)**
 - All config values exported as getter functions (not constants)
 - This pattern enables dynamic runtime changes, critical for testing
-- Key configs: SOURCE_DIR, DEST_DIR, ANTHROPIC_API_KEY, DIRECTORY_STABILITY_TIMEOUT
+- Key configs: SOURCE_DIR, DEST_DIR, ANTHROPIC_API_KEY, DIRECTORY_STABILITY_TIMEOUT, LIBRARY_LAYOUT, REVIEW_DIR, DRY_RUN, INGEST_EBOOKS
 
 **Utilities (src/utils.js)**
-- `isAudio(filename)`: Checks for .mp3 or .m4b extensions
+- `isAudio(filename)`: Checks for .mp3, .m4b, or .m4a extensions
+- `isEbook`, `isSupportedBook`, `bookFileKind` ('audio'|'epub'|null): format gating; `.epub` is unsupported when `INGEST_EBOOKS=false`
+- `isWithinReviewDir(p)`: shared ignore predicate for the watcher, discovery, and queue grouping
 - `heuristicsFromName(filename, parentDir)`: Fallback parsing for author/title
 - `sanitizeSegment(str)`: Cleans filenames for filesystem safety
 
@@ -108,9 +132,11 @@ docker run -d \
    - Grouped as directory (multi-file audiobooks)
    - Skipped (nested structures that will be handled by children)
 3. **Stability Checks**: Directory jobs wait for DIRECTORY_STABILITY_TIMEOUT to ensure complete uploads
-4. **Metadata Extraction**: Claude AI analyzes filename → extracts author/title with fallback to heuristics
-5. **Migration**: Files copied to `DEST_DIR/[Author]/[Title]/` with configured permissions
-6. **Cleanup**: Source files removed after successful migration
+4. **Metadata Extraction**: audio tags / EPUB OPF + AI normalization → author/title, with fallback to heuristics
+5. **Matching**: identifier → deterministic keys → near match + AI → new book or ambiguous
+6. **Planning**: every destination classified as copy, skip-identical, or conflict before any write
+7. **Execution**: staged copy + rename into `DEST_DIR/[Author]/[Title]/` with configured permissions, or quarantine to `REVIEW_DIR` (dry-run only logs)
+8. **Cleanup**: Source files removed after the whole unit succeeds
 
 ### Key Behaviors
 
@@ -120,7 +146,7 @@ docker run -d \
 - PENDING: Just created, awaiting processing
 - WAITING_STABILITY: Directory waiting for stability timeout
 - PROCESSING: Currently being migrated
-- COMPLETED: Successfully migrated
+- COMPLETED: Successfully migrated, skipped as identical, or quarantined (`result.outcome === 'quarantined'`)
 - FAILED: Migration failed (tracks error)
 - CANCELLED: Source deleted before processing
 
@@ -138,6 +164,10 @@ All configuration is via environment variables (see .env.example). Key variables
 - `DEST_DIR`: Library output directory (default: ./data/library)
 - `DIRECTORY_STABILITY_TIMEOUT`: Milliseconds to wait for stability (default: 5000)
 - `LOG_LEVEL`: trace, debug, info, warn, error (default: info)
+- `LIBRARY_LAYOUT`: audiobookshelf or bookorbit (default: audiobookshelf)
+- `REVIEW_DIR`: quarantine folder, must be outside DEST_DIR (default: SOURCE_DIR/.dewey-review)
+- `DRY_RUN`: log planned actions without changing files (default: false)
+- `INGEST_EBOOKS`: organize .epub files (default: true)
 
 ## Testing Patterns
 
@@ -185,3 +215,7 @@ Docker HEALTHCHECK uses `src/healthcheck.js` to verify the service.
 5. **Chokidar awaitWriteFinish**: The watcher uses `awaitWriteFinish` with stability threshold to prevent processing incomplete uploads. This is in addition to the JobQueue's own stability checks.
 
 6. **Logging with Job Context**: Use `job.createLogger(baseLogger)` to get a logger that automatically prefixes messages with the job ID.
+
+7. **Never overwrite library files**: New write paths must go through `planUnit`/`executePlan` so collisions quarantine instead of clobbering, and must honor `DRY_RUN()`.
+
+8. **Serial queue is load-bearing**: Matching reads the library fresh per unit with no lock. Introducing concurrent job processing requires a per-author-key lock around plan + execute.
