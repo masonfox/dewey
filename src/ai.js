@@ -77,6 +77,7 @@ async function request(config, prompt, deadline, maxOutputTokens) {
   try {
     return await Promise.race([generateText({ model: createModel(config), prompt,
       maxOutputTokens, maxRetries: 0, abortSignal: controller.signal,
+      ...(config.provider === 'anthropic' && { providerOptions: { anthropic: { thinking: { type: 'disabled' } } } }),
       include: { responseBody: true } }), timeout]);
   } finally {
     clearTimeout(timer);
