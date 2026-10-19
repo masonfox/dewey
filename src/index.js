@@ -15,6 +15,7 @@ import { LOG_FILE, LOG_LEVEL, SOURCE_DIR, DEST_DIR, DIRECTORY_STABILITY_TIMEOUT,
 import { isFatal } from './errors.js';
 import { isWithinReviewDir } from './utils.js';
 import { sweepStalePartials } from './migrate.js';
+import { validateFfprobe } from './metadata.js';
 
 // Read version from package.json
 const __filename = fileURLToPath(import.meta.url);
@@ -100,8 +101,9 @@ await sweepStalePartials(log);
 // Initialize job queue with logger
 jobQueue.setLogger(log);
 
-// Validate selected AI provider on boot (non-fatal)
+// Validate selected AI provider and ffprobe on boot (non-fatal)
 await validateAI(log);
+await validateFfprobe(log);
 
 // Set up periodic job cleanup (every 5 minutes)
 setInterval(() => {

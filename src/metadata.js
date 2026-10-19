@@ -14,7 +14,7 @@ let ffprobeWarningShown = false;
 
 /**
  * Check if ffprobe is available on the system
- * @returns {Promise<boolean>}
+ * @returns {Promise<string|boolean>} truthy when available (its version line on a fresh probe)
  */
 async function checkFfprobeAvailable() {
   if (ffprobeAvailable !== null) {
@@ -22,13 +22,30 @@ async function checkFfprobeAvailable() {
   }
   
   try {
-    await execFileAsync('ffprobe', ['-version'], { timeout: 5000 });
+    const { stdout } = await execFileAsync('ffprobe', ['-version'], { timeout: 5000 });
     ffprobeAvailable = true;
-    return true;
+    return String(stdout || '').split(/\r?\n/)[0].trim() || true;
   } catch (error) {
     ffprobeAvailable = false;
     return false;
   }
+}
+
+/**
+ * Probe ffprobe on boot (non-fatal) so a missing install is reported before any job runs,
+ * rather than on the first audio file
+ * @returns {Promise<boolean>}
+ */
+export async function validateFfprobe(log) {
+  ffprobeAvailable = null;
+  const version = await checkFfprobeAvailable();
+  if (!version) {
+    log.warn('⚠️  ffprobe not found on PATH; audio metadata extraction disabled. Install ffmpeg and restart Dewey.');
+    ffprobeWarningShown = true;
+    return false;
+  }
+  log.info(`🎧 ffprobe validation successful${typeof version === 'string' ? ` (${version})` : ''}`);
+  return true;
 }
 
 /**
