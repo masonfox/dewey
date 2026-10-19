@@ -1,6 +1,6 @@
 {
   "name": "dewey",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "Audiobook migrator with optional multi-provider AI normalization",
   "license": "MIT",
   "author": "Mason Fox <masonfox22@gmail.com>",
