@@ -19,7 +19,7 @@ The system SHALL accept `AI_PROVIDER` values `anthropic`, `openai`, `google`, an
 - **THEN** Anthropic remains selected
 
 ### Requirement: Legacy Anthropic compatibility
-For Anthropic, the system SHALL resolve the model from nonblank `AI_MODEL`, then nonblank `CLAUDE_MODEL`, then `claude-haiku-4-5-20251001`. It SHALL resolve the endpoint from nonblank `AI_BASE_URL`, then `ANTHROPIC_API_URL`, then `https://api.anthropic.com`. Legacy URL settings SHALL retain their existing API-root semantics. Legacy Anthropic settings SHALL NOT affect other providers.
+For Anthropic, the system SHALL resolve the model from nonblank `AI_MODEL`, then nonblank `CLAUDE_MODEL`, then `claude-haiku-5-5`. It SHALL resolve the endpoint from nonblank `AI_BASE_URL`, then `ANTHROPIC_API_URL`, then `https://api.anthropic.com`. Legacy URL settings SHALL retain their existing API-root semantics. Legacy Anthropic settings SHALL NOT affect other providers.
 
 #### Scenario: Existing deployment
 - **WHEN** only existing Anthropic settings are configured

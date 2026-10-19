@@ -16,7 +16,8 @@ export const LOG_LEVEL = () => process.env.LOG_LEVEL || 'info';
 
 // Claude AI configuration  
 export const ANTHROPIC_API_KEY = () => process.env.ANTHROPIC_API_KEY || '';
-export const CLAUDE_MODEL = () => process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001';
+export const DEFAULT_CLAUDE_MODEL = 'claude-haiku-5-5';
+export const CLAUDE_MODEL = () => process.env.CLAUDE_MODEL || DEFAULT_CLAUDE_MODEL;
 export const ANTHROPIC_API_URL = () => (process.env.ANTHROPIC_API_URL || 'https://api.anthropic.com').replace(/\/$/, '');
 
 const nonblank = value => value?.trim() || '';
@@ -32,7 +33,7 @@ export function resolveAIConfig() {
     throw new ConfigError('AI_PROVIDER must be one of: anthropic, openai, google, openai-compatible', ['AI_PROVIDER']);
   }
   const model = nonblank(process.env.AI_MODEL) || (provider === 'anthropic'
-    ? nonblank(process.env.CLAUDE_MODEL) || 'claude-haiku-4-5-20251001' : '');
+    ? nonblank(process.env.CLAUDE_MODEL) || DEFAULT_CLAUDE_MODEL : '');
   if (!model) throw new ConfigError('AI_MODEL is required for the selected provider', ['AI_MODEL']);
   const legacy = provider === 'anthropic' && !nonblank(process.env.AI_BASE_URL);
   const urlVariable = legacy ? 'ANTHROPIC_API_URL' : 'AI_BASE_URL';
