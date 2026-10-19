@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { resolveAIConfig, validateConfig } from '../src/config.js';
+import { CLAUDE_MODEL, resolveAIConfig, validateConfig } from '../src/config.js';
 import { clearAIEnv } from './ai-env.js';
 import { readFileSync } from 'node:fs';
 
@@ -15,6 +15,14 @@ describe('selected AI configuration', () => {
     process.env.AI_MODEL = 'new';
     process.env.AI_BASE_URL = 'https://new.example/custom/v1/';
     expect(resolveAIConfig()).toMatchObject({ model: 'new', baseURL: 'https://new.example/custom/v1' });
+  });
+
+  test('CLAUDE_MODEL getter falls back to the default and reads overrides dynamically', () => {
+    expect(CLAUDE_MODEL()).toBe('claude-haiku-5-5');
+    process.env.CLAUDE_MODEL = 'override';
+    expect(CLAUDE_MODEL()).toBe('override');
+    delete process.env.CLAUDE_MODEL;
+    expect(CLAUDE_MODEL()).toBe('claude-haiku-5-5');
   });
 
   test.each([
