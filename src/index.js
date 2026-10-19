@@ -13,6 +13,9 @@ import { JobQueue } from './jobQueue.js';
 import { validateAI } from './ai.js';
 import { LOG_FILE, LOG_LEVEL, SOURCE_DIR, DEST_DIR, DIRECTORY_STABILITY_TIMEOUT, validateConfig } from './config.js';
 import { isFatal } from './errors.js';
+import { isWithinReviewDir } from './utils.js';
+import { sweepStalePartials } from './migrate.js';
+import { validateFfprobe } from './metadata.js';
 
 // Read version from package.json
 const __filename = fileURLToPath(import.meta.url);
@@ -92,11 +95,15 @@ if (globalThis.__configWarnings && globalThis.__configWarnings.length > 0) {
 await fs.ensureDir(SOURCE_DIR());
 await fs.ensureDir(DEST_DIR());
 
+// Remove staging files left by an interrupted run (D7)
+await sweepStalePartials(log);
+
 // Initialize job queue with logger
 jobQueue.setLogger(log);
 
-// Validate selected AI provider on boot (non-fatal)
+// Validate selected AI provider and ffprobe on boot (non-fatal)
 await validateAI(log);
+await validateFfprobe(log);
 
 // Set up periodic job cleanup (every 5 minutes)
 setInterval(() => {
@@ -128,8 +135,9 @@ log.info(`🔍 Poll interval: ${Math.min(DIRECTORY_STABILITY_TIMEOUT() / 10, 200
 
 const watcher = chokidar
   .watch(SOURCE_DIR(), { 
-    ignoreInitial: false, 
-    depth: 3, 
+    ignoreInitial: false,
+    depth: 3,
+    ignored: (p) => isWithinReviewDir(p),  // Quarantined units are never re-enqueued (D8)
     awaitWriteFinish: { 
       stabilityThreshold: DIRECTORY_STABILITY_TIMEOUT(),  // Use configurable timeout
       pollInterval: Math.min(DIRECTORY_STABILITY_TIMEOUT() / 10, 200)  // Poll every 10% of timeout, max 200ms

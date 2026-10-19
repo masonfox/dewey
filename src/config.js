@@ -4,6 +4,7 @@
  * to support runtime changes (especially important for tests)
  */
 
+import path from 'node:path';
 import { ConfigError } from './errors.js';
 
 // Core directory configuration
@@ -64,6 +65,17 @@ export const PGID = () => Number(process.env.PGID || 0);
 export const FILE_MODE = () => process.env.FILE_MODE || '664';
 export const DIR_MODE = () => process.env.DIR_MODE || '775';
 
+// Library organization and safety
+const flag = (value, fallback) => {
+  const v = nonblank(value).toLowerCase();
+  return v ? v === 'true' : fallback;
+};
+export const LIBRARY_LAYOUTS = ['audiobookshelf', 'bookorbit'];
+export const LIBRARY_LAYOUT = () => nonblank(process.env.LIBRARY_LAYOUT).toLowerCase() || 'audiobookshelf';
+export const REVIEW_DIR = () => nonblank(process.env.REVIEW_DIR) || path.join(SOURCE_DIR(), '.dewey-review');
+export const DRY_RUN = () => flag(process.env.DRY_RUN, false);
+export const INGEST_EBOOKS = () => flag(process.env.INGEST_EBOOKS, true);
+
 // Export all config as a function that returns current values
 export function getConfig() {
   return {
@@ -78,7 +90,11 @@ export function getConfig() {
     PUID: PUID(),
     PGID: PGID(),
     FILE_MODE: FILE_MODE(),
-    DIR_MODE: DIR_MODE()
+    DIR_MODE: DIR_MODE(),
+    LIBRARY_LAYOUT: LIBRARY_LAYOUT(),
+    REVIEW_DIR: REVIEW_DIR(),
+    DRY_RUN: DRY_RUN(),
+    INGEST_EBOOKS: INGEST_EBOOKS()
   };
 }
 
@@ -153,6 +169,19 @@ export function validateConfig() {
 
   if (!/^[0-7]{3,4}$/.test(dirMode)) {
     errors.push(`DIR_MODE must be a valid octal mode (e.g., "755", "775") - got: "${dirMode}"`);
+  }
+
+  const layout = LIBRARY_LAYOUT();
+  if (!LIBRARY_LAYOUTS.includes(layout)) {
+    errors.push(`LIBRARY_LAYOUT must be one of: ${LIBRARY_LAYOUTS.join(', ')} (got: "${layout}")`);
+  }
+
+  // The review area must never be scanned as part of the library
+  if (destDir) {
+    const relative = path.relative(path.resolve(destDir), path.resolve(REVIEW_DIR()));
+    if (!relative || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+      errors.push('REVIEW_DIR must be outside DEST_DIR');
+    }
   }
 
   try {

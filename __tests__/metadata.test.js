@@ -545,3 +545,80 @@ describe('metadata.js - Integration Tests', () => {
     });
   });
 });
+
+describe('metadata.js - Broadened audio tags (D3)', () => {
+  test('should request all format tags without a field filter', async () => {
+    const { log } = createMockLogger();
+    await extractAudioMetadata('/home/mason/Downloads/Lodestar.mp3', log);
+
+    const probeCall = childProcess.execFile.mock.calls.find(([, args]) => args.at(-1) === '/home/mason/Downloads/Lodestar.mp3');
+    expect(probeCall[1]).toContain('format_tags');
+    expect(probeCall[1].some(arg => arg.startsWith('format_tags='))).toBe(false);
+  });
+
+  test('should read ASIN, ISBN, and language with case-insensitive keys', async () => {
+    const { log } = createMockLogger();
+    mockFfprobeResponses['/tags/upper.m4b'] = {
+      format: { tags: { TITLE: 'Dune', ARTIST: 'Frank Herbert', ASIN: 'b002v1of70', ISBN: '0-441-01359-7', LANGUAGE: 'eng' } }
+    };
+
+    const result = await extractAudioMetadata('/tags/upper.m4b', log);
+
+    expect(result).toMatchObject({
+      title: 'Dune',
+      author: 'Frank Herbert',
+      asin: 'B002V1OF70',
+      isbn: '9780441013593',
+      language: 'eng',
+      hasMetadata: true,
+      source: 'file'
+    });
+  });
+
+  test('should fall back to AUDIBLE_ASIN when ASIN is absent', async () => {
+    const { log } = createMockLogger();
+    mockFfprobeResponses['/tags/audible.m4b'] = {
+      format: { tags: { title: 'Dune', artist: 'Frank Herbert', AUDIBLE_ASIN: 'B002V1OF70' } }
+    };
+
+    const result = await extractAudioMetadata('/tags/audible.m4b', log);
+
+    expect(result.asin).toBe('B002V1OF70');
+    expect(result).not.toHaveProperty('isbn');
+  });
+
+  test('should drop an ISBN tag with a bad checksum', async () => {
+    const { log } = createMockLogger();
+    mockFfprobeResponses['/tags/bad-isbn.mp3'] = {
+      format: { tags: { title: 'Dune', artist: 'Frank Herbert', isbn: '0441013598' } }
+    };
+
+    const result = await extractAudioMetadata('/tags/bad-isbn.mp3', log);
+
+    expect(result).not.toHaveProperty('isbn');
+  });
+
+  test('should return identifier-only metadata when no other tags exist', async () => {
+    const { log } = createMockLogger();
+    mockFfprobeResponses['/tags/asin-only.m4b'] = { format: { tags: { asin: 'B002V1OF70' } } };
+
+    const result = await extractAudioMetadata('/tags/asin-only.m4b', log);
+
+    expect(result).toMatchObject({ title: null, author: null, asin: 'B002V1OF70', hasMetadata: true });
+  });
+});
+
+describe('metadata.js - extractUnitMetadata (D10)', () => {
+  test('audio-only unit still prefers the first .m4b over .mp3', async () => {
+    const { extractUnitMetadata } = await import('../src/metadata.js');
+    const { log, calls } = createMockLogger();
+    mockFfprobeResponses['/unit/b.m4b'] = mockFfprobeResponses['/home/mason/Downloads/01 Angels and Demons.m4b'];
+    mockFfprobeResponses['/unit/a.m4b'] = mockFfprobeResponses['/home/mason/Downloads/R.F. Kuang - Katabasis.m4b'];
+    mockFfprobeResponses['/unit/01.mp3'] = mockFfprobeResponses['/home/mason/Downloads/Lodestar.mp3'];
+
+    const result = await extractUnitMetadata(['/unit/01.mp3', '/unit/b.m4b', '/unit/a.m4b'], log);
+
+    expect(result).toMatchObject({ title: 'Katabasis', author: 'R. F. Kuang', year: '2025', primaryFile: '/unit/a.m4b', hasMetadata: true });
+    expect(calls.debug.flat().join(' ')).toContain('M4B');
+  });
+});

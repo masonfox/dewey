@@ -517,3 +517,107 @@ describe('JobQueue', () => {
     });
   });
 });
+describe('JobQueue supported-book grouping and review directory', () => {
+  let testDir;
+  let sourceDir;
+  let reviewDir;
+  let jobQueue;
+  let savedReviewDir;
+
+  beforeEach(async () => {
+    testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dewey-queue-ebook-test-'));
+    sourceDir = path.join(testDir, 'incoming');
+    reviewDir = path.join(sourceDir, '.dewey-review');
+    await fs.ensureDir(sourceDir);
+    savedReviewDir = process.env.REVIEW_DIR;
+    process.env.REVIEW_DIR = reviewDir;
+
+    jobQueue = new JobQueue({ stabilityTimeout: 100, batchProcessDelay: 50, sourceDir });
+    jobQueue.setLogger(mockLogger);
+    Object.values(mockLogger).forEach(fn => fn.mockClear());
+    mockMigrateJob.mockClear();
+    mockMigrateJob.mockImplementation(() => Promise.resolve({ author: 'Test Author', title: 'Test Title', files: 1 }));
+  });
+
+  afterEach(async () => {
+    if (jobQueue.batchTimer) clearTimeout(jobQueue.batchTimer);
+    if (savedReviewDir === undefined) delete process.env.REVIEW_DIR;
+    else process.env.REVIEW_DIR = savedReviewDir;
+    if (testDir && await fs.pathExists(testDir)) {
+      await fs.remove(testDir);
+    }
+  });
+
+  test('epub beside an m4b in a subfolder yields one directory job', async () => {
+    const duneDir = path.join(sourceDir, 'Dune');
+    await fs.ensureDir(duneDir);
+    await fs.writeFile(path.join(duneDir, 'Dune.m4b'), 'audio');
+    await fs.writeFile(path.join(duneDir, 'Dune.epub'), 'epub');
+
+    await jobQueue.enqueue(path.join(duneDir, 'Dune.epub'));
+    await jobQueue.enqueue(path.join(duneDir, 'Dune.m4b'));
+    await jobQueue.enqueue(duneDir);
+
+    expect(jobQueue.jobs.size).toBe(1);
+    const job = Array.from(jobQueue.jobs.values())[0];
+    expect(job.type).toBe(JobType.DIRECTORY);
+    expect(job.sourcePath).toBe(path.resolve(duneDir));
+  });
+
+  test('two epubs in a subfolder are grouped as a directory job', async () => {
+    const duneDir = path.join(sourceDir, 'Dune');
+    await fs.ensureDir(duneDir);
+    await fs.writeFile(path.join(duneDir, 'Dune.epub'), 'epub');
+    await fs.writeFile(path.join(duneDir, 'Dune (readaloud).epub'), 'epub');
+
+    await jobQueue.enqueue(path.join(duneDir, 'Dune.epub'));
+
+    expect(jobQueue.jobs.size).toBe(1);
+    expect(Array.from(jobQueue.jobs.values())[0].type).toBe(JobType.DIRECTORY);
+  });
+
+  test('author folder with only nested epub books is skipped in favor of children', async () => {
+    const authorDir = path.join(sourceDir, 'Frank Herbert');
+    const duneDir = path.join(authorDir, 'Dune');
+    await fs.ensureDir(duneDir);
+    await fs.writeFile(path.join(duneDir, 'Dune.epub'), 'epub');
+
+    expect(await jobQueue.shouldSkipParentDirectory(authorDir)).toBe(true);
+    expect(await jobQueue.directoryContainsSupportedBook(authorDir)).toBe(true);
+    await jobQueue.enqueue(authorDir);
+    expect(jobQueue.jobs.size).toBe(0);
+  });
+
+  test('ignores files and directories under REVIEW_DIR', async () => {
+    const unitDir = path.join(reviewDir, '20260101-Dune');
+    await fs.ensureDir(unitDir);
+    await fs.writeFile(path.join(unitDir, 'Dune.m4b'), 'audio');
+    await fs.writeFile(path.join(unitDir, 'Dune.epub'), 'epub');
+
+    await jobQueue.enqueue(reviewDir);
+    await jobQueue.enqueue(unitDir);
+    await jobQueue.enqueue(path.join(unitDir, 'Dune.epub'));
+
+    expect(jobQueue.jobs.size).toBe(0);
+    expect(await jobQueue.directoryContainsSupportedBook(reviewDir)).toBe(false);
+  });
+
+  test('does not ignore a sibling of REVIEW_DIR sharing its prefix', async () => {
+    const sibling = path.join(sourceDir, '.dewey-review2');
+    await fs.ensureDir(sibling);
+    await fs.writeFile(path.join(sibling, 'Dune.epub'), 'epub');
+
+    await jobQueue.enqueue(sibling);
+
+    expect(jobQueue.jobs.size).toBe(1);
+  });
+
+  test('parent with only a review subfolder is not skipped for it', async () => {
+    // REVIEW_DIR nested below a book-less folder must not make that folder look like a parent of books
+    process.env.REVIEW_DIR = path.join(sourceDir, 'holding', 'review');
+    await fs.ensureDir(path.join(sourceDir, 'holding', 'review', 'unit'));
+    await fs.writeFile(path.join(sourceDir, 'holding', 'review', 'unit', 'Dune.epub'), 'epub');
+
+    expect(await jobQueue.shouldSkipParentDirectory(path.join(sourceDir, 'holding'))).toBe(false);
+  });
+});
