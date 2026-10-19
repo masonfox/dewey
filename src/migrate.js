@@ -2,7 +2,7 @@ import path from 'node:path';
 import fs from 'fs-extra';
 import { promises as fsPromises } from 'node:fs';
 import { normalizeViaAI } from './ai.js';
-import { heuristicsFromName, sanitizeSegment, isAudio } from './utils.js';
+import { heuristicsFromName, sanitizeSegment, isAudio, isSupportedBook, isWithinReviewDir } from './utils.js';
 import { JobType } from './job.js';
 import { SOURCE_DIR, DEST_DIR, FILE_MODE, DIR_MODE, PUID, PGID } from './config.js';
 import { SkipError } from './errors.js';
@@ -324,32 +324,32 @@ async function migrateJobDirectory(job, log) {
   }
 }
 
-// Recursively discover all migration units (directories with audio or loose audio files)
+// Recursively discover all migration units (directories with supported book files or loose book files)
 // This prevents race conditions by doing all discovery upfront before any migration
 export async function discoverMigrationUnits(rootDir) {
   const units = [];
-  
+
   async function traverse(currentDir, isRoot = false) {
     try {
       const entries = await fs.readdir(currentDir, { withFileTypes: true });
       const directories = [];
-      const audioFiles = [];
-      
-      // Separate directories and audio files
+      const bookFiles = [];
+
+      // Separate directories and supported book files; never descend into REVIEW_DIR
       for (const entry of entries) {
         const fullPath = path.join(currentDir, entry.name);
         if (entry.isDirectory()) {
-          directories.push(fullPath);
-        } else if (isAudio(fullPath)) {
-          audioFiles.push(fullPath);
+          if (!isWithinReviewDir(fullPath)) directories.push(fullPath);
+        } else if (isSupportedBook(fullPath)) {
+          bookFiles.push(fullPath);
         }
       }
-      
+
       // For the root directory (incoming), process contents but don't treat root as a unit
       if (isRoot) {
-        // Add loose audio files in root as individual units
-        for (const audioFile of audioFiles) {
-          units.push({ type: 'file', path: audioFile });
+        // Add loose book files in root as individual units
+        for (const bookFile of bookFiles) {
+          units.push({ type: 'file', path: bookFile });
         }
         // Continue to traverse subdirectories
         for (const subDir of directories) {
@@ -358,15 +358,15 @@ export async function discoverMigrationUnits(rootDir) {
         return;
       }
       
-      // For non-root directories: if this directory contains audio files, treat it as a migration unit
-      if (audioFiles.length > 0) {
+      // For non-root directories: if this directory contains book files, treat it as a migration unit
+      if (bookFiles.length > 0) {
         units.push({ type: 'directory', path: currentDir });
-        // Don't traverse subdirectories of directories that contain audio
+        // Don't traverse subdirectories of directories that contain book files
         // (they should be processed as a single unit)
         return;
       }
-      
-      // If no audio files here, recursively check subdirectories
+
+      // If no book files here, recursively check subdirectories
       for (const subDir of directories) {
         await traverse(subDir, false);
       }

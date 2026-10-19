@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { INGEST_EBOOKS } from './config.js';
+import { INGEST_EBOOKS, REVIEW_DIR } from './config.js';
 
 export function isAudio(p) {
   return /\.(mp3|m4b|m4a)$/i.test(p);
@@ -18,6 +18,18 @@ export function bookFileKind(p) {
   if (isAudio(p)) return 'audio';
   if (isEbook(p)) return 'epub';
   return null;
+}
+
+/** True when p is dir itself or inside it; sibling prefixes (e.g. dir2) never match */
+export function isPathWithin(p, dir, pathImpl = path) {
+  const rel = pathImpl.relative(pathImpl.resolve(dir), pathImpl.resolve(p));
+  if (rel === '') return true;
+  return rel !== '..' && !rel.startsWith('..' + pathImpl.sep) && !pathImpl.isAbsolute(rel);
+}
+
+/** True for REVIEW_DIR() and anything below it; shared watcher/discovery/queue ignore predicate */
+export function isWithinReviewDir(p) {
+  return isPathWithin(p, REVIEW_DIR());
 }
 
 export function sanitizeSegment(s) {

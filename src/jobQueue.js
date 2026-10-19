@@ -1,7 +1,7 @@
 import { Job, JobState, JobType } from './job.js';
 import { discoverMigrationUnits } from './migrate.js';
 import { SkipError, isRetryable, isSkippable } from './errors.js';
-import { isAudio } from './utils.js';
+import { isSupportedBook, isWithinReviewDir } from './utils.js';
 import path from 'node:path';
 import fs from 'fs-extra';
 
@@ -39,6 +39,12 @@ export class JobQueue {
     const resolvedSourceDir = path.resolve(this.sourceDir);
     if (resolvedPath === resolvedSourceDir) {
       this.logger?.debug(`🏠 Skipping root source directory: ${path.basename(sourcePath)}`);
+      return;
+    }
+
+    // Quarantined units in REVIEW_DIR are never reprocessed
+    if (isWithinReviewDir(resolvedPath)) {
+      this.logger?.debug(`🚧 Ignoring path in review directory: ${path.basename(sourcePath)}`);
       return;
     }
 
@@ -154,13 +160,13 @@ export class JobQueue {
       if (!parentStat.isDirectory()) return null;
       
       const parentFiles = await fs.readdir(parentDir, { withFileTypes: true });
-      const audioFiles = parentFiles.filter(f => f.isFile() && isAudio(f.name));
+      const bookFiles = parentFiles.filter(f => f.isFile() && isSupportedBook(f.name));
       const allFiles = parentFiles.filter(f => f.isFile());
-      
+
       // Process as directory if:
-      // 1. Multiple audio files, OR
-      // 2. Single audio file with supporting files (cue, txt, jpg, etc.)
-      if (audioFiles.length > 1 || (audioFiles.length === 1 && allFiles.length > 1)) {
+      // 1. Multiple book files (any mix of audio/epub), OR
+      // 2. Single book file with supporting files (cue, txt, jpg, etc.)
+      if (bookFiles.length > 1 || (bookFiles.length === 1 && allFiles.length > 1)) {
         // Check if we already have a job for the parent directory
         let parentJob = this.findJobByPath(parentDir);
         
@@ -181,26 +187,26 @@ export class JobQueue {
   }
 
   /**
-   * Check if a parent directory should be skipped because its child directories contain audio files
+   * Check if a parent directory should be skipped because its child directories contain book files
    */
   async shouldSkipParentDirectory(dirPath) {
     try {
       const entries = await fs.readdir(dirPath, { withFileTypes: true });
-      
-      // Check if this directory has direct audio files
-      const hasDirectAudioFiles = entries.some(entry => !entry.isDirectory() && isAudio(entry.name));
-      
-      // If it has direct audio files, don't skip it
-      if (hasDirectAudioFiles) {
+
+      // Check if this directory has direct book files
+      const hasDirectBookFiles = entries.some(entry => !entry.isDirectory() && isSupportedBook(entry.name));
+
+      // If it has direct book files, don't skip it
+      if (hasDirectBookFiles) {
         return false;
       }
-      
-      // Check if any subdirectories contain audio files
+
+      // Check if any subdirectories contain book files
       for (const entry of entries) {
         if (entry.isDirectory()) {
           const subDirPath = path.join(dirPath, entry.name);
-          const hasAudioInSubdir = await this.directoryContainsAudio(subDirPath);
-          if (hasAudioInSubdir) {
+          const hasBookInSubdir = await this.directoryContainsSupportedBook(subDirPath);
+          if (hasBookInSubdir) {
             // This parent directory should be skipped since its child will be processed
             return true;
           }
@@ -215,25 +221,26 @@ export class JobQueue {
   }
 
   /**
-   * Recursively check if a directory contains audio files
+   * Recursively check if a directory contains supported book files, ignoring REVIEW_DIR
    */
-  async directoryContainsAudio(dirPath) {
+  async directoryContainsSupportedBook(dirPath) {
+    if (isWithinReviewDir(dirPath)) return false;
     try {
       const entries = await fs.readdir(dirPath, { withFileTypes: true });
-      
-      // Check direct audio files first
+
+      // Check direct book files first
       for (const entry of entries) {
-        if (!entry.isDirectory() && isAudio(entry.name)) {
+        if (!entry.isDirectory() && isSupportedBook(entry.name)) {
           return true;
         }
       }
-      
+
       // Check subdirectories
       for (const entry of entries) {
         if (entry.isDirectory()) {
           const subDirPath = path.join(dirPath, entry.name);
-          const hasAudio = await this.directoryContainsAudio(subDirPath);
-          if (hasAudio) {
+          const hasBook = await this.directoryContainsSupportedBook(subDirPath);
+          if (hasBook) {
             return true;
           }
         }

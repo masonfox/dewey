@@ -13,6 +13,7 @@ import { JobQueue } from './jobQueue.js';
 import { validateAI } from './ai.js';
 import { LOG_FILE, LOG_LEVEL, SOURCE_DIR, DEST_DIR, DIRECTORY_STABILITY_TIMEOUT, validateConfig } from './config.js';
 import { isFatal } from './errors.js';
+import { isWithinReviewDir } from './utils.js';
 
 // Read version from package.json
 const __filename = fileURLToPath(import.meta.url);
@@ -128,8 +129,9 @@ log.info(`🔍 Poll interval: ${Math.min(DIRECTORY_STABILITY_TIMEOUT() / 10, 200
 
 const watcher = chokidar
   .watch(SOURCE_DIR(), { 
-    ignoreInitial: false, 
-    depth: 3, 
+    ignoreInitial: false,
+    depth: 3,
+    ignored: (p) => isWithinReviewDir(p),  // Quarantined units are never re-enqueued (D8)
     awaitWriteFinish: { 
       stabilityThreshold: DIRECTORY_STABILITY_TIMEOUT(),  // Use configurable timeout
       pollInterval: Math.min(DIRECTORY_STABILITY_TIMEOUT() / 10, 200)  // Poll every 10% of timeout, max 200ms

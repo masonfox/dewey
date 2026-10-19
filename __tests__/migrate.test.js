@@ -499,3 +499,84 @@ describe('migratePath integration tests (legacy)', () => {
     expect(await fs.pathExists(textFile)).toBe(true);
   });
 });
+describe('discoverMigrationUnits with ebooks', () => {
+  test('finds a loose epub in the root as a file unit', async () => {
+    await fs.writeFile(path.join(sourceDir, 'Dune.epub'), 'fake epub');
+    await fs.writeFile(path.join(sourceDir, 'notes.pdf'), 'unsupported');
+
+    const units = await discoverMigrationUnits(sourceDir);
+
+    expect(units).toEqual([{ type: 'file', path: path.join(sourceDir, 'Dune.epub') }]);
+  });
+
+  test('treats a mixed audio + epub directory as one directory unit', async () => {
+    const duneDir = path.join(sourceDir, 'Dune');
+    await fs.ensureDir(duneDir);
+    await fs.writeFile(path.join(duneDir, 'Dune.m4b'), 'fake audio');
+    await fs.writeFile(path.join(duneDir, 'Dune.epub'), 'fake epub');
+
+    const units = await discoverMigrationUnits(sourceDir);
+
+    expect(units).toEqual([{ type: 'directory', path: duneDir }]);
+  });
+
+  test('treats an epub-only directory as a directory unit', async () => {
+    const duneDir = path.join(sourceDir, 'Dune');
+    await fs.ensureDir(duneDir);
+    await fs.writeFile(path.join(duneDir, 'Dune.EPUB'), 'fake epub');
+    await fs.writeFile(path.join(duneDir, 'cover.jpg'), 'image');
+
+    const units = await discoverMigrationUnits(sourceDir);
+
+    expect(units).toEqual([{ type: 'directory', path: duneDir }]);
+  });
+
+  test('author folder with nested books yields one unit per book, not the author folder', async () => {
+    const authorDir = path.join(sourceDir, 'Frank Herbert');
+    const duneDir = path.join(authorDir, 'Dune');
+    const childrenDir = path.join(authorDir, 'Children of Dune');
+    await fs.ensureDir(duneDir);
+    await fs.ensureDir(childrenDir);
+    await fs.writeFile(path.join(duneDir, 'Dune.epub'), 'fake epub');
+    await fs.writeFile(path.join(childrenDir, 'Children of Dune.m4b'), 'fake audio');
+    await fs.writeFile(path.join(childrenDir, 'Children of Dune.epub'), 'fake epub');
+
+    const units = await discoverMigrationUnits(sourceDir);
+
+    expect(units).toHaveLength(2);
+    expect(units).toEqual(expect.arrayContaining([
+      { type: 'directory', path: duneDir },
+      { type: 'directory', path: childrenDir }
+    ]));
+  });
+
+  test('ignores the review folder but not similarly named siblings', async () => {
+    const reviewUnit = path.join(sourceDir, '.dewey-review', '20260101-Dune');
+    await fs.ensureDir(reviewUnit);
+    await fs.writeFile(path.join(reviewUnit, 'Dune.epub'), 'fake epub');
+    await fs.writeFile(path.join(sourceDir, '.dewey-review', 'loose.m4b'), 'fake audio');
+    const siblingDir = path.join(sourceDir, '.dewey-review2');
+    await fs.ensureDir(siblingDir);
+    await fs.writeFile(path.join(siblingDir, 'Other.epub'), 'fake epub');
+
+    const units = await discoverMigrationUnits(sourceDir);
+
+    expect(units).toEqual([{ type: 'directory', path: siblingDir }]);
+  });
+
+  test('ignores epubs when INGEST_EBOOKS=false', async () => {
+    process.env.INGEST_EBOOKS = 'false';
+    try {
+      await fs.writeFile(path.join(sourceDir, 'Dune.epub'), 'fake epub');
+      const epubDir = path.join(sourceDir, 'Ebook Only');
+      await fs.ensureDir(epubDir);
+      await fs.writeFile(path.join(epubDir, 'Book.epub'), 'fake epub');
+
+      const units = await discoverMigrationUnits(sourceDir);
+
+      expect(units).toEqual([]);
+    } finally {
+      delete process.env.INGEST_EBOOKS;
+    }
+  });
+});
