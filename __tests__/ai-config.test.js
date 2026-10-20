@@ -1,12 +1,12 @@
 import { describe, test, expect } from 'vitest';
-import { resolveAIConfig, validateConfig } from '../src/config.js';
+import { CLAUDE_MODEL, resolveAIConfig, validateConfig } from '../src/config.js';
 import { clearAIEnv } from './ai-env.js';
 import { readFileSync } from 'node:fs';
 
 describe('selected AI configuration', () => {
   test('defaults remain Anthropic even with other credentials; getters are dynamic', () => {
     process.env.OPENAI_API_KEY = 'other';
-    expect(resolveAIConfig()).toMatchObject({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001', baseURL: 'https://api.anthropic.com/v1', usable: false });
+    expect(resolveAIConfig()).toMatchObject({ provider: 'anthropic', model: 'claude-haiku-5-5', baseURL: 'https://api.anthropic.com/v1', usable: false });
     process.env.AI_PROVIDER = '  ';
     expect(resolveAIConfig().provider).toBe('anthropic');
     process.env.CLAUDE_MODEL = 'legacy';
@@ -15,6 +15,14 @@ describe('selected AI configuration', () => {
     process.env.AI_MODEL = 'new';
     process.env.AI_BASE_URL = 'https://new.example/custom/v1/';
     expect(resolveAIConfig()).toMatchObject({ model: 'new', baseURL: 'https://new.example/custom/v1' });
+  });
+
+  test('CLAUDE_MODEL getter falls back to the default and reads overrides dynamically', () => {
+    expect(CLAUDE_MODEL()).toBe('claude-haiku-5-5');
+    process.env.CLAUDE_MODEL = 'override';
+    expect(CLAUDE_MODEL()).toBe('override');
+    delete process.env.CLAUDE_MODEL;
+    expect(CLAUDE_MODEL()).toBe('claude-haiku-5-5');
   });
 
   test.each([
@@ -68,7 +76,7 @@ describe('selected AI configuration', () => {
 
   test('documentation examples resolve to their intended provider and endpoint', () => {
     const examples = [
-      [{ ANTHROPIC_API_KEY: 'sk-ant-example' }, 'anthropic', 'claude-haiku-4-5-20251001', 'https://api.anthropic.com/v1'],
+      [{ ANTHROPIC_API_KEY: 'sk-ant-example' }, 'anthropic', 'claude-haiku-5-5', 'https://api.anthropic.com/v1'],
       [{ AI_PROVIDER: 'openai', AI_MODEL: 'gpt-4.1-mini', OPENAI_API_KEY: 'example' }, 'openai', 'gpt-4.1-mini', undefined],
       [{ AI_PROVIDER: 'google', AI_MODEL: 'gemini-2.5-flash', GOOGLE_GENERATIVE_AI_API_KEY: 'example' }, 'google', 'gemini-2.5-flash', undefined],
       [{ AI_PROVIDER: 'openai-compatible', AI_MODEL: 'local-model', AI_BASE_URL: 'http://localhost:1234/v1' }, 'openai-compatible', 'local-model', 'http://localhost:1234/v1'],

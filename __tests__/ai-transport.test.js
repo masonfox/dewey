@@ -40,6 +40,8 @@ test.each([
     expect(JSON.stringify(init)).not.toContain('unselected');
     const body = JSON.parse(init.body);
     if (provider !== 'google') expect(body.model).toBe('chosen-model');
+    if (provider === 'anthropic') expect(body.thinking).toEqual({ type: 'disabled' });
+    else expect(JSON.stringify(body)).not.toContain('thinking');
   }
 });
 

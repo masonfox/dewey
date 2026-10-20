@@ -91,7 +91,7 @@ Ensure your repository has Actions permissions set to `Read and write packages` 
 ### AI provider configuration
 
 AI normalization is optional. With no provider variables, Dewey selects Anthropic,
-model `claude-haiku-4-5-20251001`, and uses heuristics when no Anthropic key is set.
+model `claude-haiku-5-5`, and uses heuristics when no Anthropic key is set.
 Selection is explicit: available keys never select a provider and no gateway or
 provider failover is used. Configuration is read dynamically for each operation.
 
@@ -148,7 +148,7 @@ are ignored. A missing native key warns and disables AI network calls; a
 compatible endpoint can run without a key.
 
 Anthropic model precedence is nonblank `AI_MODEL`, then nonblank `CLAUDE_MODEL`,
-then `claude-haiku-4-5-20251001`. Anthropic endpoint precedence is nonblank
+then `claude-haiku-5-5`. Anthropic endpoint precedence is nonblank
 `AI_BASE_URL`, then `ANTHROPIC_API_URL`, then the native default. Empty or
 whitespace-only new settings fall through. Legacy settings still work:
 
